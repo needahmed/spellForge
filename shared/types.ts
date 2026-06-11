@@ -4,7 +4,9 @@ export interface PlayerInfo {
   id: string;
   name: string;
   score: number;
-  submitted: boolean;
+  gems: number;
+  /** has finished their turn this round */
+  played: boolean;
   connected: boolean;
 }
 
@@ -14,6 +16,8 @@ export interface RoundResult {
   word: string;
   points: number;
   total: number;
+  /** end-of-game only: leftover gems converted to points */
+  gemBonus?: number;
 }
 
 export type RoomPhase = 'lobby' | 'playing' | 'roundResults' | 'finished';
@@ -25,14 +29,26 @@ export interface RoomState {
   players: PlayerInfo[];
   round: number; // 1-based, 0 in lobby
   totalRounds: number;
+  activePlayerId: string | null;
+  /** current board — lets late-mounting clients render without waiting for the next event */
+  tiles: BoardTile[];
+  turnEndsAt: number;
 }
+
+export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: string }) => void;
 
 // client -> server
 export interface ClientEvents {
-  createRoom: (name: string, cb: (res: { ok: true; code: string } | { ok: false; error: string }) => void) => void;
-  joinRoom: (code: string, name: string, cb: (res: { ok: true } | { ok: false; error: string }) => void) => void;
+  createRoom: (name: string, cb: Ack<{ code: string }>) => void;
+  joinRoom: (code: string, name: string, cb: Ack) => void;
   startGame: () => void;
-  submitWord: (path: number[], cb: (res: { ok: true; points: number } | { ok: false; error: string }) => void) => void;
+  submitWord: (path: number[], cb: Ack<{ points: number; gemsCollected: number }>) => void;
+  passTurn: () => void;
+  useShuffle: (cb: Ack) => void;
+  useSwap: (idx: number, letter: string, cb: Ack) => void;
+  useHint: (cb: Ack<{ path: number[] }>) => void;
+  useTimeExtend: (cb: Ack<{ endsAt: number }>) => void;
+  dragPath: (path: number[]) => void;
   playAgain: () => void;
   leaveRoom: () => void;
 }
@@ -40,7 +56,11 @@ export interface ClientEvents {
 // server -> client
 export interface ServerEvents {
   roomState: (state: RoomState) => void;
-  roundStart: (data: { round: number; totalRounds: number; tiles: BoardTile[]; endsAt: number }) => void;
+  roundStart: (data: { round: number; totalRounds: number; tiles: BoardTile[] }) => void;
+  turnStart: (data: { playerId: string; endsAt: number }) => void;
+  wordPlayed: (data: { playerId: string; name: string; word: string; points: number; gemsCollected: number }) => void;
+  boardUpdate: (data: { tiles: BoardTile[]; replaced: number[]; cause: 'word' | 'shuffle' | 'swap' }) => void;
+  remoteDrag: (data: { playerId: string; path: number[] }) => void;
   roundEnd: (data: { round: number; results: RoundResult[] }) => void;
   gameEnd: (data: { standings: RoundResult[] }) => void;
 }

@@ -1,12 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BoardTile } from '../../shared/scoring';
-import { GRID, LETTER_VALUES, MIN_WORD_LEN, isAdjacent, pathToWord, scoreWord } from '../../shared/scoring';
+import { LETTER_VALUES, MIN_WORD_LEN, isAdjacent, pathToWord, scoreWord } from '../../shared/scoring';
 import { getWords, loadDictionary } from '../lib/dictionary';
 
 interface BoardProps {
   tiles: BoardTile[];
   disabled: boolean;
   onSubmit: (path: number[]) => Promise<{ ok: boolean; error?: string }>;
+  /** live path updates while dragging — used to stream to spectators */
+  onPathChange?: (path: number[]) => void;
+  /** the active player's drag, rendered when this client is spectating */
+  remotePath?: number[];
+  /** cascade animation trigger: tiles that just dropped in */
+  dropIn?: { ids: number[]; ts: number } | null;
+  /** hint word path to glow */
+  hintPath?: number[] | null;
+  /** swap ability: clicking a tile picks it instead of starting a drag */
+  pickMode?: boolean;
+  onPickTile?: (idx: number) => void;
 }
 
 interface Pt {
@@ -14,7 +25,17 @@ interface Pt {
   y: number;
 }
 
-export function Board({ tiles, disabled, onSubmit }: BoardProps) {
+export function Board({
+  tiles,
+  disabled,
+  onSubmit,
+  onPathChange,
+  remotePath,
+  dropIn,
+  hintPath,
+  pickMode,
+  onPickTile,
+}: BoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const tileRefs = useRef<(HTMLDivElement | null)[]>([]);
   const centersRef = useRef<Pt[]>([]);
@@ -28,23 +49,34 @@ export function Board({ tiles, disabled, onSubmit }: BoardProps) {
   const updatePath = (next: number[]) => {
     pathLiveRef.current = next;
     setPath(next);
+    onPathChange?.(next);
   };
   const [pointer, setPointer] = useState<Pt | null>(null);
   const [flash, setFlash] = useState<'error' | 'success' | null>(null);
+  const [dropping, setDropping] = useState<Set<number>>(new Set());
   const [, setDictReady] = useState(false);
 
   useEffect(() => {
     loadDictionary().then(() => setDictReady(true));
   }, []);
 
-  // Clear any in-progress drag when the board changes (new round)
+  // Clear any in-progress drag when a fresh round board arrives.
+  // (Cascade updates mid-round only happen when it's not our drag.)
   useEffect(() => {
-    draggingRef.current = false;
+    if (draggingRef.current) return;
     pathLiveRef.current = [];
     setPath([]);
     setPointer(null);
     setFlash(null);
   }, [tiles]);
+
+  // cascade drop-in animation
+  useEffect(() => {
+    if (!dropIn) return;
+    setDropping(new Set(dropIn.ids));
+    const t = setTimeout(() => setDropping(new Set()), 550);
+    return () => clearTimeout(t);
+  }, [dropIn?.ts]);
 
   const measure = useCallback(() => {
     const container = containerRef.current;
@@ -78,6 +110,10 @@ export function Board({ tiles, disabled, onSubmit }: BoardProps) {
   };
 
   const onPointerDown = (e: React.PointerEvent, idx: number) => {
+    if (pickMode) {
+      onPickTile?.(idx);
+      return;
+    }
     if (disabled || flash) return;
     e.preventDefault();
     measure();
@@ -161,19 +197,26 @@ export function Board({ tiles, disabled, onSubmit }: BoardProps) {
   const isWord = path.length >= MIN_WORD_LEN && !!dict && dict.has(word);
   const points = isWord ? scoreWord(tiles, path) : 0;
 
-  // SVG trail points
+  // local drag trail
   const trail: Pt[] = path.map((i) => centersRef.current[i]).filter(Boolean);
   if (draggingRef.current && pointer && trail.length > 0) trail.push(pointer);
   const trailStr = trail.map((p) => `${p.x},${p.y}`).join(' ');
-
   const lineClass = flash === 'error' ? 'trail error' : isWord ? 'trail valid' : 'trail';
 
-  // Score badge above the last selected tile
+  // spectator trail (active player's drag)
+  const showRemote = disabled && !!remotePath && remotePath.length > 0;
+  const remoteTrail: Pt[] = showRemote ? remotePath!.map((i) => centersRef.current[i]).filter(Boolean) : [];
+  const remoteStr = remoteTrail.map((p) => `${p.x},${p.y}`).join(' ');
+  const remoteSet = showRemote ? new Set(remotePath) : null;
+
+  const hintSet = hintPath && hintPath.length > 0 ? new Set(hintPath) : null;
+
+  // score badge above the last selected tile
   const lastCenter = path.length > 0 ? centersRef.current[path[path.length - 1]] : null;
 
   return (
     <div
-      className={`board ${flash === 'error' ? 'board-error' : ''}`}
+      className={`board ${flash === 'error' ? 'board-error' : ''} ${pickMode ? 'board-pick' : ''}`}
       ref={containerRef}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -184,6 +227,12 @@ export function Board({ tiles, disabled, onSubmit }: BoardProps) {
           <>
             <polyline className={`${lineClass} trail-under`} points={trailStr} />
             <polyline className={lineClass} points={trailStr} />
+          </>
+        )}
+        {remoteTrail.length > 1 && (
+          <>
+            <polyline className="trail remote trail-under" points={remoteStr} />
+            <polyline className="trail remote" points={remoteStr} />
           </>
         )}
       </svg>
@@ -198,6 +247,9 @@ export function Board({ tiles, disabled, onSubmit }: BoardProps) {
             selected && flash === 'error' ? 'tile-error' : '',
             selected && flash === 'success' ? 'tile-success' : '',
             selected && isWord && !flash ? 'tile-valid' : '',
+            remoteSet?.has(i) ? 'tile-remote' : '',
+            hintSet?.has(i) ? 'tile-hint' : '',
+            dropping.has(i) ? 'tile-drop' : '',
           ]
             .filter(Boolean)
             .join(' ');
@@ -213,6 +265,7 @@ export function Board({ tiles, disabled, onSubmit }: BoardProps) {
             >
               <span className="tile-letter">{tile.letter}</span>
               <span className="tile-points">{LETTER_VALUES[tile.letter] * tile.letterMult}</span>
+              {tile.gem && <span className="tile-gem">♦</span>}
               {tile.letterMult > 1 && <span className="badge badge-dl">DL</span>}
               {tile.wordMult > 1 && <span className="badge badge-2x">2X</span>}
             </div>
@@ -226,7 +279,6 @@ export function Board({ tiles, disabled, onSubmit }: BoardProps) {
           <span className="score-pop-points">+{points}</span>
         </div>
       )}
-
     </div>
   );
 }

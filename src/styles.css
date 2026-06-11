@@ -427,6 +427,49 @@ body {
   box-shadow: 0 0 10px rgba(255, 46, 166, 0.6);
 }
 
+.tile-gem {
+  position: absolute;
+  left: 7%;
+  bottom: 2%;
+  font-size: clamp(11px, 1.8vh, 16px);
+  color: #ff4dd2;
+  text-shadow: 0 0 6px rgba(255, 77, 210, 0.8);
+  pointer-events: none;
+  animation: gem-twinkle 1.6s infinite;
+}
+@keyframes gem-twinkle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.75; transform: scale(0.9); }
+}
+
+.tile.tile-remote {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 3px var(--cyan), 0 0 18px rgba(65, 224, 255, 0.45), 0 4px 0 #c9c4b8;
+}
+.tile.tile-hint {
+  box-shadow: 0 0 0 3px var(--gold), 0 0 20px rgba(255, 206, 58, 0.55), 0 4px 0 #c9c4b8;
+  animation: hint-pulse 0.9s infinite;
+}
+@keyframes hint-pulse {
+  50% { transform: scale(1.07); }
+}
+.tile.tile-drop {
+  animation: tile-drop 0.5s cubic-bezier(0.25, 1.4, 0.45, 1);
+}
+@keyframes tile-drop {
+  0% { transform: translateY(-130%) scale(0.85); opacity: 0; }
+  60% { opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.board-pick .tile {
+  cursor: crosshair;
+}
+.board-pick .tile:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 0 3px var(--gold), 0 0 20px rgba(255, 206, 58, 0.5), 0 4px 0 #c9c4b8;
+}
+
 .trail-svg {
   position: absolute;
   inset: 0;
@@ -457,6 +500,10 @@ body {
 .trail.error {
   stroke: var(--error);
   filter: drop-shadow(0 0 8px rgba(255, 59, 92, 0.6));
+}
+.trail.remote {
+  stroke: var(--cyan);
+  filter: drop-shadow(0 0 8px rgba(65, 224, 255, 0.5));
 }
 
 .score-pop {
@@ -490,43 +537,169 @@ body {
   color: var(--valid);
 }
 
-/* ---------- submitted overlay ---------- */
-.submitted-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(7, 10, 30, 0.78);
-  border-radius: 24px;
-  z-index: 5;
-  animation: fade-in 0.25s ease;
-}
+/* ---------- turn banner & play feed ---------- */
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-.submitted-card {
-  text-align: center;
+.turn-banner {
+  font-weight: 900;
+  font-size: 18px;
+  padding: 8px 24px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-dim);
+}
+.turn-banner.my-turn {
+  color: #fff;
+  background: linear-gradient(90deg, rgba(255, 46, 166, 0.25), rgba(65, 224, 255, 0.25));
+  border-color: var(--accent);
+  box-shadow: 0 0 22px rgba(255, 46, 166, 0.25);
+  animation: banner-glow 1.6s infinite;
+}
+@keyframes banner-glow {
+  50% { box-shadow: 0 0 34px rgba(255, 46, 166, 0.45); }
+}
+
+.play-banner {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0d1130;
+  border: 2px solid var(--cyan);
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-weight: 800;
+  white-space: nowrap;
+  z-index: 10;
+  box-shadow: 0 0 18px rgba(65, 224, 255, 0.35);
+  animation: pop-in 0.2s ease;
+}
+.play-name { color: var(--cyan); }
+.play-word { letter-spacing: 2px; margin: 0 4px; }
+.play-points { color: var(--valid); margin-left: 4px; }
+.play-gems { color: #ff4dd2; margin-left: 8px; }
+
+.hint-banner,
+.pick-hint {
+  position: absolute;
+  bottom: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0d1130;
+  border: 2px solid var(--gold);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 7px 16px;
+  font-weight: 800;
+  white-space: nowrap;
+  z-index: 10;
+  box-shadow: 0 0 16px rgba(255, 206, 58, 0.35);
+  animation: pop-in 0.2s ease;
+}
+.hint-banner b { color: var(--gold); letter-spacing: 2px; }
+
+/* ---------- abilities ---------- */
+.side-col {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 20px;
+  gap: 14px;
+  min-width: 220px;
 }
-.submitted-word {
-  font-size: 34px;
-  font-weight: 900;
-  letter-spacing: 3px;
+.abilities {
+  background: linear-gradient(180deg, var(--panel) 0%, var(--bg2) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-.submitted-points {
-  font-size: 22px;
-  font-weight: 900;
-  color: var(--valid);
-}
-.submitted-waiting {
+.abilities h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
   color: var(--text-dim);
-  font-weight: 700;
-  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.my-gems {
+  color: #ff4dd2;
+  font-size: 15px;
+  text-shadow: 0 0 8px rgba(255, 77, 210, 0.6);
+}
+.ability-btn {
+  font: inherit;
+  font-weight: 800;
+  font-size: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: transform 0.08s, background 0.15s, border-color 0.15s;
+}
+.ability-btn:hover:not(:disabled) {
+  background: rgba(255, 46, 166, 0.15);
+  border-color: var(--accent);
+}
+.ability-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.ability-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ability-cost {
+  color: #ff4dd2;
+  font-weight: 900;
+}
+.pass-btn {
+  font: inherit;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  margin-top: 2px;
+}
+
+/* ---------- letter picker ---------- */
+.letter-picker h2 {
+  margin: 0;
+  text-align: center;
+  font-size: 20px;
+}
+.swap-from {
+  color: var(--gold);
+}
+.letter-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+.letter-btn {
+  font: inherit;
+  font-weight: 900;
+  font-size: 18px;
+  aspect-ratio: 1;
+  background: var(--tile);
+  color: var(--tile-text);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.08s, box-shadow 0.15s;
+}
+.letter-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 0 2px var(--accent), 0 0 14px var(--accent-soft);
 }
 
 /* ---------- scoreboard ---------- */
@@ -559,6 +732,28 @@ body {
 .score-row.is-me {
   background: rgba(65, 224, 255, 0.1);
   border: 1px solid rgba(65, 224, 255, 0.25);
+}
+.score-row.is-active {
+  background: rgba(255, 46, 166, 0.12);
+  border: 1px solid rgba(255, 46, 166, 0.45);
+  box-shadow: 0 0 12px rgba(255, 46, 166, 0.2);
+}
+.score-gems {
+  color: #ff4dd2;
+  font-weight: 900;
+  font-size: 13px;
+  min-width: 34px;
+  text-align: right;
+}
+.status-dot.turn {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse 1s infinite;
+}
+.gem-bonus {
+  color: #ff4dd2;
+  font-size: 12px;
+  margin-left: 8px;
 }
 .status-dot {
   width: 9px;
@@ -680,6 +875,7 @@ body {
     align-items: center;
     width: 100%;
   }
+  .side-col,
   .scoreboard {
     width: min(78vw, 460px);
     min-width: 0;

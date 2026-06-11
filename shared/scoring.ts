@@ -20,6 +20,8 @@ export interface BoardTile {
   letterMult: number;
   /** word multiplier: 1 or 2 (2X) */
   wordMult: number;
+  /** holds a collectible gem */
+  gem: boolean;
 }
 
 export function scoreWord(tiles: BoardTile[], path: number[]): number {
