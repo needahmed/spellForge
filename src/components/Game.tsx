@@ -110,13 +110,13 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
   const iAmWaiting = room.phase === 'playing' && room.activePlayerId !== myId && !me?.played && room.activePlayerId !== null;
   const iHaveVoted = room.rushVotes.includes(myId);
 
-  // Waiting players for vote display (non-active, non-AI)
+  // Only players who haven't cast yet can vote to rush the active caster
   const waitingPlayers = room.players.filter(
-    (p) => p.id !== room.activePlayerId && !p.isAI,
+    (p) => p.id !== room.activePlayerId && !p.isAI && !p.played,
   );
   const voteCount = waitingPlayers.filter((p) => room.rushVotes.includes(p.id)).length;
   const voteRequired = waitingPlayers.length;
-  const hasAnyVotes = room.phase === 'playing' && (room.rushVotes.length > 0 || room.rushActive);
+  const hasAnyVotes = room.phase === 'playing' && waitingPlayers.length > 0 && (voteCount > 0 || room.rushActive);
 
   // Timer bar (only meaningful when rush is active)
   const rushSecsLeft = room.rushActive
@@ -190,7 +190,6 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
     return <div className="screen"><p className="waiting-text">Summoning the board…</p></div>;
   }
 
-  const sortedPlayers = [...room.players].sort((a, b) => b.score - a.score);
   const hintWord = hintPath ? hintPath.map((i) => tiles[i].letter).join('') : null;
 
   // Turn banner text
@@ -276,9 +275,9 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
               Spellcasters
               {room.isPvE && <span className="pve-badge">vs AI · {room.aiDifficulty}</span>}
             </h3>
-            {sortedPlayers.map((p) => {
+            {room.players.map((p) => {
               const isActive = p.id === room.activePlayerId;
-              const isWaiter = !isActive && !p.isAI && room.phase === 'playing';
+              const isWaiter = !isActive && !p.isAI && !p.played && room.phase === 'playing';
               const voted = room.rushVotes.includes(p.id);
               return (
                 <div
@@ -304,7 +303,10 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
             })}
           </div>
 
-          {/* rush button panel — only for waiting players */}
+          {/* rush button panel — only for players still waiting to cast this round */}
+          {room.phase === 'playing' && me?.played && room.activePlayerId !== myId && !room.rushActive && waitingPlayers.length > 0 && (
+            <p className="rush-done-note">You already cast — waiting for {activePlayer?.name ?? '…'}</p>
+          )}
           {iAmWaiting && !room.rushActive && (
             <div className="rush-panel">
               {iHaveVoted ? (
