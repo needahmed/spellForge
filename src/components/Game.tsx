@@ -4,7 +4,9 @@ import type { RoomState, RoundResult } from '../../shared/types';
 import { socket } from '../lib/socket';
 import { Board } from './Board';
 
-const TURN_SECONDS = 45;
+const RUSH_GRACE_MS = 15_000;
+const RUSH_COUNTDOWN_MS = 10_000;
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 interface LastPlay {
   playerId: string;
@@ -15,10 +17,7 @@ interface LastPlay {
   ts: number;
 }
 
-const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-
 export function Game({ room, myId }: { room: RoomState; myId: string }) {
-  // initialized from roomState so a freshly-mounted Game never misses the board
   const [tiles, setTiles] = useState<BoardTile[] | null>(room.tiles.length ? room.tiles : null);
   const [round, setRound] = useState(room.round);
   const [dropIn, setDropIn] = useState<{ ids: number[]; ts: number } | null>(null);
@@ -55,9 +54,7 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
       setRemotePath([]);
     };
     const onRemoteDrag = (data: { playerId: string; path: number[] }) => setRemotePath(data.path);
-    const onRoundEnd = (data: { results: RoundResult[] }) => {
-      setRoundResults(data.results);
-    };
+    const onRoundEnd = (data: { results: RoundResult[] }) => setRoundResults(data.results);
     const onGameEnd = (data: { standings: RoundResult[] }) => {
       setStandings(data.standings);
       setRoundResults(null);
@@ -78,6 +75,7 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
     };
   }, []);
 
+  // 250 ms clock tick for countdown displays
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(t);
@@ -97,16 +95,36 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
     }
   }, [toast]);
 
-  // clear the spectator trail whenever the turn changes hands
-  useEffect(() => {
-    setRemotePath([]);
-  }, [room.activePlayerId]);
+  useEffect(() => { setRemotePath([]); }, [room.activePlayerId]);
 
+  // ── derived state ──────────────────────────────────────────────────────────
   const me = room.players.find((p) => p.id === myId);
   const myGems = me?.gems ?? 0;
   const isHost = room.hostId === myId;
   const activePlayer = room.players.find((p) => p.id === room.activePlayerId);
   const isMyTurn = room.phase === 'playing' && room.activePlayerId === myId && !(me?.played);
+
+  // Rush mechanic derived values
+  const graceRemaining = Math.max(0, Math.ceil((RUSH_GRACE_MS - (now - room.turnStartedAt)) / 1000));
+  const inGrace = graceRemaining > 0 && room.phase === 'playing';
+  const iAmWaiting = room.phase === 'playing' && room.activePlayerId !== myId && !me?.played && room.activePlayerId !== null;
+  const iHaveVoted = room.rushVotes.includes(myId);
+
+  // Waiting players for vote display (non-active, non-AI)
+  const waitingPlayers = room.players.filter(
+    (p) => p.id !== room.activePlayerId && !p.isAI,
+  );
+  const voteCount = waitingPlayers.filter((p) => room.rushVotes.includes(p.id)).length;
+  const voteRequired = waitingPlayers.length;
+  const hasAnyVotes = room.phase === 'playing' && (room.rushVotes.length > 0 || room.rushActive);
+
+  // Timer bar (only meaningful when rush is active)
+  const rushSecsLeft = room.rushActive
+    ? Math.max(0, Math.ceil((room.rushEndsAt - now) / 1000))
+    : 0;
+  const rushFrac = room.rushActive
+    ? Math.max(0, Math.min(1, (room.rushEndsAt - now) / RUSH_COUNTDOWN_MS))
+    : 0;
 
   const submitWord = (path: number[]) =>
     new Promise<{ ok: boolean; error?: string }>((resolve) => {
@@ -118,10 +136,7 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
 
   const ability = (event: string, ...args: unknown[]) => {
     socket.emit(event, ...args, (res: { ok: boolean; error?: string; path?: number[] }) => {
-      if (!res.ok) {
-        setToast(res.error ?? 'Nope.');
-        return;
-      }
+      if (!res.ok) { setToast(res.error ?? 'Nope.'); return; }
       if (event === 'useHint' && res.path) {
         setHintPath(res.path);
         setTimeout(() => setHintPath(null), 6000);
@@ -129,29 +144,25 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
     });
   };
 
-  const startSwap = () => {
-    if (!isMyTurn || myGems < 3) return;
-    setSwapPicking(true);
+  const pressRush = () => {
+    socket.emit('pressStartTimer', (res: { ok: boolean; error?: string }) => {
+      if (!res.ok && res.error) setToast(res.error);
+    });
   };
 
-  const pickSwapTile = (idx: number) => {
-    setSwapIdx(idx);
-    setSwapPicking(false);
-  };
-
+  const startSwap = () => { if (isMyTurn && myGems >= 3) setSwapPicking(true); };
+  const pickSwapTile = (idx: number) => { setSwapIdx(idx); setSwapPicking(false); };
   const chooseSwapLetter = (letter: string) => {
     if (swapIdx !== null) ability('useSwap', swapIdx, letter);
     setSwapIdx(null);
   };
 
-  // ---------- final standings ----------
+  // ── final standings ────────────────────────────────────────────────────────
   if (standings) {
     const winner = standings[0];
     return (
       <div className="screen game-over">
-        <h1 className="logo logo-small">
-          Spell<span>Forge</span>
-        </h1>
+        <h1 className="logo logo-small">Spell<span>Forge</span></h1>
         <div className="card">
           <div className="winner-crown">👑</div>
           <h2 className="winner-name">{winner.name} wins!</h2>
@@ -167,60 +178,72 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
               </div>
             ))}
           </div>
-          {isHost ? (
-            <button className="btn btn-primary" onClick={() => socket.emit('playAgain')}>
-              Back to Lobby
-            </button>
-          ) : (
-            <p className="waiting-text">Waiting for the host…</p>
-          )}
+          {isHost
+            ? <button className="btn btn-primary" onClick={() => socket.emit('playAgain')}>Back to Lobby</button>
+            : <p className="waiting-text">Waiting for the host…</p>}
         </div>
       </div>
     );
   }
 
   if (!tiles) {
-    return (
-      <div className="screen">
-        <p className="waiting-text">Summoning the board…</p>
-      </div>
-    );
+    return <div className="screen"><p className="waiting-text">Summoning the board…</p></div>;
   }
 
-  const turnActive = room.phase === 'playing' && !!room.activePlayerId;
-  const secsLeft = turnActive ? Math.max(0, Math.ceil((room.turnEndsAt - now) / 1000)) : 0;
-  const timeFrac = turnActive ? Math.max(0, Math.min(1, (room.turnEndsAt - now) / (TURN_SECONDS * 1000))) : 0;
   const sortedPlayers = [...room.players].sort((a, b) => b.score - a.score);
   const hintWord = hintPath ? hintPath.map((i) => tiles[i].letter).join('') : null;
 
+  // Turn banner text
+  let bannerText: string;
+  if (room.phase !== 'playing') {
+    bannerText = 'Round over!';
+  } else if (isMyTurn && room.rushActive) {
+    bannerText = `⚡ Rush! ${rushSecsLeft}s — submit now!`;
+  } else if (isMyTurn) {
+    bannerText = '✨ Your turn — take your time!';
+  } else if (room.rushActive) {
+    bannerText = `⚡ Rush! ${rushSecsLeft}s — ${activePlayer?.name ?? '…'} is on the clock!`;
+  } else {
+    bannerText = activePlayer ? `${activePlayer.name} is casting…` : '…';
+  }
+
   return (
     <div className="screen game">
+      {/* ── header ── */}
       <header className="game-header">
         <div className="round-pill">
           Round {round}<span>/{room.totalRounds}</span>
         </div>
+        {/* Timer bar: only shown during rush countdown */}
         <div className="timer">
           <div className="timer-bar">
             <div
-              className={`timer-fill ${secsLeft <= 10 ? 'timer-low' : ''}`}
-              style={{ width: `${timeFrac * 100}%` }}
+              className={`timer-fill ${room.rushActive && rushSecsLeft <= 5 ? 'timer-low' : ''} ${room.rushActive ? '' : 'timer-idle'}`}
+              style={{ width: room.rushActive ? `${rushFrac * 100}%` : '0%' }}
             />
           </div>
-          <span className={`timer-secs ${secsLeft <= 10 && secsLeft > 0 ? 'timer-low-text' : ''}`}>{secsLeft}s</span>
+          <span className={`timer-secs ${room.rushActive && rushSecsLeft <= 5 ? 'timer-low-text' : ''}`}>
+            {room.rushActive ? `${rushSecsLeft}s` : '∞'}
+          </span>
         </div>
       </header>
 
-      <div className={`turn-banner ${isMyTurn ? 'my-turn' : ''}`}>
-        {room.phase !== 'playing'
-          ? 'Round over!'
-          : isMyTurn
-            ? '✨ Your turn — cast a word!'
-            : activePlayer
-              ? `${activePlayer.name} is casting…`
-              : '…'}
+      {/* ── turn banner ── */}
+      <div className={`turn-banner ${isMyTurn ? 'my-turn' : ''} ${room.rushActive && isMyTurn ? 'rush-active' : ''}`}>
+        {bannerText}
       </div>
 
+      {/* ── rush vote progress (shown to everyone when there are any votes or rush is active) ── */}
+      {hasAnyVotes && (
+        <div className="rush-progress">
+          {room.rushActive
+            ? <span className="rush-label rush-live">⚡ Rush active — {rushSecsLeft}s</span>
+            : <span className="rush-label">{voteCount}/{voteRequired} ready to rush</span>}
+        </div>
+      )}
+
       <div className="game-body">
+        {/* ── board ── */}
         <div className="board-wrap">
           <Board
             tiles={tiles}
@@ -234,11 +257,7 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
             onPickTile={pickSwapTile}
           />
           {swapPicking && <div className="pick-hint">Tap the tile you want to transform ✨</div>}
-          {hintWord && (
-            <div className="hint-banner">
-              Hint: <b>{hintWord}</b>
-            </div>
-          )}
+          {hintWord && <div className="hint-banner">Hint: <b>{hintWord}</b></div>}
           {lastPlay && (
             <div className="play-banner" key={lastPlay.ts}>
               <span className="play-name">{lastPlay.playerId === myId ? 'You' : lastPlay.name}</span> cast{' '}
@@ -249,56 +268,88 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
           )}
         </div>
 
+        {/* ── sidebar ── */}
         <aside className="side-col">
+          {/* scoreboard with per-player rush indicators */}
           <div className="scoreboard">
-            <h3>Spellcasters</h3>
-            {sortedPlayers.map((p) => (
-              <div
-                className={`score-row ${p.id === myId ? 'is-me' : ''} ${p.id === room.activePlayerId ? 'is-active' : ''}`}
-                key={p.id}
-              >
-                <span className={`status-dot ${p.played ? 'done' : ''} ${p.id === room.activePlayerId ? 'turn' : ''}`} />
-                <span className="score-name">{p.name}</span>
-                <span className="score-gems">♦ {p.gems}</span>
-                <span className="score-value">{p.score}</span>
-              </div>
-            ))}
+            <h3>
+              Spellcasters
+              {room.isPvE && <span className="pve-badge">vs AI · {room.aiDifficulty}</span>}
+            </h3>
+            {sortedPlayers.map((p) => {
+              const isActive = p.id === room.activePlayerId;
+              const isWaiter = !isActive && !p.isAI && room.phase === 'playing';
+              const voted = room.rushVotes.includes(p.id);
+              return (
+                <div
+                  className={`score-row ${p.id === myId ? 'is-me' : ''} ${isActive ? 'is-active' : ''}`}
+                  key={p.id}
+                >
+                  <span className={`status-dot ${p.played ? 'done' : ''} ${isActive ? 'turn' : ''}`} />
+                  <span className="score-name">
+                    {p.name}
+                    {p.isAI && <span className="ai-tag">AI</span>}
+                    {p.id === myId && <span className="you-tag-sm">you</span>}
+                  </span>
+                  {/* rush vote indicator next to each non-active player */}
+                  {isWaiter && hasAnyVotes && (
+                    <span className={`rush-vote-dot ${voted ? 'voted' : 'pending'}`} title={voted ? 'Voted' : 'Pending'}>
+                      {voted ? '✓' : '◌'}
+                    </span>
+                  )}
+                  <span className="score-gems">♦ {p.gems}</span>
+                  <span className="score-value">{p.score}</span>
+                </div>
+              );
+            })}
           </div>
 
+          {/* rush button panel — only for waiting players */}
+          {iAmWaiting && !room.rushActive && (
+            <div className="rush-panel">
+              {iHaveVoted ? (
+                <button className="rush-btn rush-btn-voted" disabled>
+                  Rushed ✓ — waiting for others ({voteCount}/{voteRequired})
+                </button>
+              ) : inGrace ? (
+                <button className="rush-btn rush-btn-disabled" disabled>
+                  Rush ({graceRemaining}s)
+                </button>
+              ) : (
+                <button className="rush-btn rush-btn-ready" onClick={pressRush}>
+                  ⚡ Rush {activePlayer?.name ?? 'them'}
+                  {voteRequired > 1 && ` (${voteCount + 1}/${voteRequired})`}
+                </button>
+              )}
+              {voteCount > 0 && !iHaveVoted && (
+                <p className="rush-peers">
+                  {waitingPlayers
+                    .filter((p) => room.rushVotes.includes(p.id))
+                    .map((p) => p.name)
+                    .join(', ')}{' '}
+                  already voted
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* abilities */}
           <div className="abilities">
-            <h3>
-              Abilities <span className="my-gems">♦ {myGems}</span>
-            </h3>
-            <button
-              className="ability-btn"
-              disabled={!isMyTurn || myGems < 1}
-              onClick={() => ability('useShuffle')}
-              title="Rearrange all letters — bonuses stay attached"
-            >
+            <h3>Abilities <span className="my-gems">♦ {myGems}</span></h3>
+            <button className="ability-btn" disabled={!isMyTurn || myGems < 1}
+              onClick={() => ability('useShuffle')} title="Rearrange all letters — bonuses stay attached">
               🔀 Shuffle <span className="ability-cost">♦1</span>
             </button>
-            <button
-              className="ability-btn"
-              disabled={!isMyTurn || myGems < 3}
-              onClick={startSwap}
-              title="Replace any letter on the board with one you choose"
-            >
+            <button className="ability-btn" disabled={!isMyTurn || myGems < 3}
+              onClick={startSwap} title="Replace any letter on the board with one you choose">
               🔁 Swap <span className="ability-cost">♦3</span>
             </button>
-            <button
-              className="ability-btn"
-              disabled={!isMyTurn || myGems < 4}
-              onClick={() => ability('useHint')}
-              title="Reveal a valid word on the board"
-            >
+            <button className="ability-btn" disabled={!isMyTurn || myGems < 4}
+              onClick={() => ability('useHint')} title="Reveal a valid word on the board">
               💡 Hint <span className="ability-cost">♦4</span>
             </button>
-            <button
-              className="ability-btn"
-              disabled={!isMyTurn || myGems < 1}
-              onClick={() => ability('useTimeExtend')}
-              title="Add 30 seconds to your turn"
-            >
+            <button className="ability-btn" disabled={!isMyTurn || !room.rushActive || myGems < 1}
+              onClick={() => ability('useTimeExtend')} title="Add 30 s to the rush countdown">
               ⏳ +30s <span className="ability-cost">♦1</span>
             </button>
             {isMyTurn && (
@@ -310,26 +361,22 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
         </aside>
       </div>
 
+      {/* ── letter picker modal ── */}
       {swapIdx !== null && tiles && (
         <div className="modal-backdrop" onClick={() => setSwapIdx(null)}>
           <div className="card letter-picker" onClick={(e) => e.stopPropagation()}>
-            <h2>
-              Transform <span className="swap-from">{tiles[swapIdx].letter}</span> into…
-            </h2>
+            <h2>Transform <span className="swap-from">{tiles[swapIdx].letter}</span> into…</h2>
             <div className="letter-grid">
               {ALPHABET.map((l) => (
-                <button key={l} className="letter-btn" onClick={() => chooseSwapLetter(l)}>
-                  {l}
-                </button>
+                <button key={l} className="letter-btn" onClick={() => chooseSwapLetter(l)}>{l}</button>
               ))}
             </div>
-            <button className="btn btn-ghost" onClick={() => setSwapIdx(null)}>
-              Cancel
-            </button>
+            <button className="btn btn-ghost" onClick={() => setSwapIdx(null)}>Cancel</button>
           </div>
         </div>
       )}
 
+      {/* ── round results modal ── */}
       {roundResults && (
         <div className="modal-backdrop">
           <div className="card results-card">

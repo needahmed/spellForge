@@ -58,6 +58,60 @@ function shuffled<T>(arr: T[]): T[] {
 }
 
 /**
+ * Finds a word for the AI opponent based on difficulty:
+ *   easy   — 3-4 letters, 25 % chance to pass
+ *   medium — 4-6 letters (default behaviour)
+ *   hard   — prefers the longest word it can find (up to MAX_HINT_LEN)
+ */
+export function findWordByDifficulty(
+  tiles: BoardTile[],
+  difficulty: 'easy' | 'medium' | 'hard',
+): number[] | null {
+  if (difficulty === 'easy' && Math.random() < 0.25) return null;
+  const maxLen = difficulty === 'easy' ? 4 : MAX_HINT_LEN;
+  const minPrefer = difficulty === 'hard' ? 6 : 4;
+  return findWordWithConstraints(tiles, maxLen, minPrefer);
+}
+
+function findWordWithConstraints(
+  tiles: BoardTile[],
+  maxLen: number,
+  minPrefer: number,
+): number[] | null {
+  const dict = getDictionary();
+  const pfx = getPrefixes();
+  let fallback: number[] | null = null;
+  let best: number[] | null = null;
+
+  const dfs = (pathArr: number[], word: string): void => {
+    if (dict.has(word)) {
+      if (word.length >= minPrefer) {
+        if (!best || word.length > best.length) best = [...pathArr];
+      } else if (!fallback && word.length >= 3) {
+        fallback = [...pathArr];
+      }
+    }
+    if (word.length >= maxLen) return;
+    for (const n of shuffled(NEIGHBORS[pathArr[pathArr.length - 1]])) {
+      if (pathArr.includes(n)) continue;
+      const next = word + tiles[n].letter;
+      if (!pfx.has(next)) continue;
+      pathArr.push(n);
+      dfs(pathArr, next);
+      pathArr.pop();
+      // For hard mode keep searching for longer; for easy/medium stop at first good hit
+      if (best && minPrefer <= 4) return;
+    }
+  };
+
+  for (const s of shuffled(Array.from({ length: GRID * GRID }, (_, i) => i))) {
+    dfs([s], tiles[s].letter);
+    if (best && minPrefer <= 4) break;
+  }
+  return best ?? fallback;
+}
+
+/**
  * Finds a random valid word on the board (randomized DFS with prefix pruning).
  * Prefers 4+ letter words; falls back to a 3-letter word if that's all there is.
  */

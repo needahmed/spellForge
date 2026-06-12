@@ -8,6 +8,7 @@ export interface PlayerInfo {
   /** has finished their turn this round */
   played: boolean;
   connected: boolean;
+  isAI?: boolean;
 }
 
 export interface RoundResult {
@@ -22,6 +23,8 @@ export interface RoundResult {
 
 export type RoomPhase = 'lobby' | 'playing' | 'roundResults' | 'finished';
 
+export type AiDifficulty = 'easy' | 'medium' | 'hard';
+
 export interface RoomState {
   code: string;
   hostId: string;
@@ -33,6 +36,16 @@ export interface RoomState {
   /** current board — lets late-mounting clients render without waiting for the next event */
   tiles: BoardTile[];
   turnEndsAt: number;
+  isPvE: boolean;
+  aiDifficulty: AiDifficulty;
+  /** absolute ms timestamp when the current turn started (for 15 s grace countdown) */
+  turnStartedAt: number;
+  /** player IDs that have pressed Start Timer this turn */
+  rushVotes: string[];
+  /** the 10-second countdown is now running */
+  rushActive: boolean;
+  /** absolute ms timestamp when the rush countdown expires */
+  rushEndsAt: number;
 }
 
 export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: string }) => void;
@@ -41,7 +54,9 @@ export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: str
 export interface ClientEvents {
   createRoom: (name: string, cb: Ack<{ code: string }>) => void;
   joinRoom: (code: string, name: string, cb: Ack) => void;
+  startPvE: (name: string, difficulty: AiDifficulty, cb: Ack<{ code: string }>) => void;
   startGame: () => void;
+  pressStartTimer: (cb: Ack) => void;
   submitWord: (path: number[], cb: Ack<{ points: number; gemsCollected: number }>) => void;
   passTurn: () => void;
   useShuffle: (cb: Ack) => void;

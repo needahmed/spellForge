@@ -161,6 +161,17 @@ body {
   display: flex;
   gap: 10px;
 }
+.pve-row {
+  display: flex;
+  gap: 10px;
+}
+.difficulty-select {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
 
 .room-code {
   font: inherit;
@@ -249,6 +260,103 @@ body {
   from { opacity: 0; transform: translate(-50%, 12px); }
   to { opacity: 1; transform: translate(-50%, 0); }
 }
+
+/* ---------- rush mechanic ---------- */
+.rush-progress {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  animation: fade-in 0.2s ease;
+}
+.rush-label {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 5px 14px;
+}
+.rush-label.rush-live {
+  color: var(--error);
+  border-color: rgba(255, 59, 92, 0.4);
+  background: rgba(255, 59, 92, 0.1);
+  animation: pulse 0.8s infinite;
+}
+
+.rush-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rush-btn {
+  font: inherit;
+  font-weight: 900;
+  font-size: 14px;
+  border-radius: 12px;
+  padding: 10px 14px;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.08s, filter 0.12s, box-shadow 0.15s;
+  width: 100%;
+}
+.rush-btn:active { transform: scale(0.97); }
+.rush-btn-ready {
+  background: linear-gradient(180deg, #ff8c42 0%, #e06010 100%);
+  color: #fff;
+  box-shadow: 0 6px 20px rgba(255, 100, 20, 0.4);
+  animation: rush-glow 1.4s infinite;
+}
+.rush-btn-ready:hover { filter: brightness(1.12); }
+@keyframes rush-glow {
+  50% { box-shadow: 0 6px 28px rgba(255, 100, 20, 0.65); }
+}
+.rush-btn-voted {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-dim);
+  cursor: default;
+}
+.rush-btn-disabled {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-dim);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.rush-peers {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0;
+  text-align: center;
+}
+
+/* vote indicators in scoreboard */
+.rush-vote-dot {
+  font-size: 13px;
+  font-weight: 900;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.rush-vote-dot.voted { color: var(--valid); }
+.rush-vote-dot.pending { color: rgba(255, 255, 255, 0.25); }
+
+/* rush active: prominent countdown on active player's banner */
+.turn-banner.rush-active {
+  color: #fff;
+  background: linear-gradient(90deg, rgba(255, 59, 92, 0.3), rgba(255, 140, 66, 0.3));
+  border-color: var(--error);
+  box-shadow: 0 0 28px rgba(255, 59, 92, 0.4);
+  animation: rush-banner-pulse 0.6s infinite;
+}
+@keyframes rush-banner-pulse {
+  50% { box-shadow: 0 0 44px rgba(255, 59, 92, 0.65); }
+}
+
+/* idle timer bar (hidden when no rush) */
+.timer-fill.timer-idle { background: transparent; }
 
 /* ---------- game layout ---------- */
 .game {
@@ -700,6 +808,43 @@ body {
 .letter-btn:hover {
   transform: scale(1.1);
   box-shadow: 0 0 0 2px var(--accent), 0 0 14px var(--accent-soft);
+}
+
+/* ---------- AI / PvE indicators ---------- */
+.ai-tag {
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(157, 111, 255, 0.2);
+  color: #9d6fff;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.you-tag-sm {
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(65, 224, 255, 0.15);
+  color: var(--cyan);
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.pve-badge {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0.5px;
+  color: #9d6fff;
+  background: rgba(157, 111, 255, 0.15);
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-left: auto;
 }
 
 /* ---------- scoreboard ---------- */

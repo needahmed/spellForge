@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { RoomState } from '../shared/types';
+import type { AiDifficulty, RoomState } from '../shared/types';
 import { socket } from './lib/socket';
 import { loadDictionary } from './lib/dictionary';
 import { Game } from './components/Game';
@@ -11,6 +11,7 @@ export default function App() {
   const [name, setName] = useState(() => localStorage.getItem('sf-name') ?? '');
   const [joinCode, setJoinCode] = useState('');
   const [busy, setBusy] = useState(false);
+  const [aiDifficulty, setAiDifficulty] = useState<AiDifficulty>('medium');
 
   useEffect(() => {
     loadDictionary();
@@ -61,6 +62,15 @@ export default function App() {
     });
   };
 
+  const playVsAI = () => {
+    if (!name.trim()) return setError('Pick a wizard name first!');
+    setBusy(true);
+    socket.emit('startPvE', name.trim(), aiDifficulty, (res: { ok: boolean; error?: string }) => {
+      setBusy(false);
+      if (!res.ok) setError(res.error ?? 'Could not start game.');
+    });
+  };
+
   if (!room) {
     return (
       <div className="screen home">
@@ -80,6 +90,21 @@ export default function App() {
           <button className="btn btn-primary" disabled={busy} onClick={createRoom}>
             Create Room
           </button>
+          <div className="divider">or solo</div>
+          <div className="pve-row">
+            <select
+              className="input difficulty-select"
+              value={aiDifficulty}
+              onChange={(e) => setAiDifficulty(e.target.value as AiDifficulty)}
+            >
+              <option value="easy">Easy AI</option>
+              <option value="medium">Medium AI</option>
+              <option value="hard">Hard AI</option>
+            </select>
+            <button className="btn btn-secondary" disabled={busy} onClick={playVsAI}>
+              Play vs AI
+            </button>
+          </div>
           <div className="divider">or join a friend</div>
           <div className="join-row">
             <input
@@ -142,9 +167,10 @@ function Lobby({
         <div className="player-list">
           {room.players.map((p) => (
             <div className="player-row" key={p.id}>
-              <span className="player-dot" />
+              <span className="player-dot" style={p.isAI ? { background: '#9d6fff', boxShadow: '0 0 8px #9d6fff' } : {}} />
               <span className="player-name">{p.name}</span>
-              {p.id === room.hostId && <span className="host-tag">host</span>}
+              {p.isAI && <span className="host-tag" style={{ background: 'rgba(157,111,255,0.18)', color: '#9d6fff' }}>AI</span>}
+              {!p.isAI && p.id === room.hostId && <span className="host-tag">host</span>}
               {p.id === myId && <span className="you-tag">you</span>}
             </div>
           ))}

@@ -1,16 +1,24 @@
 import type { Server, Socket } from 'socket.io';
 import type { BoardTile } from '../shared/scoring';
 import { isValidPath, pathToWord, scoreWord, MIN_WORD_LEN } from '../shared/scoring';
-import type { PlayerInfo, RoomState, RoundResult } from '../shared/types';
+import type { AiDifficulty, PlayerInfo, RoomState, RoundResult } from '../shared/types';
 import { freshTile, generateBoard, shuffleBoard } from './board';
-import { findRandomWord, getDictionary } from './dictionary';
+import { findRandomWord, findWordByDifficulty, getDictionary } from './dictionary';
 
 const TOTAL_ROUNDS = 5;
-const TURN_SECONDS = 45;
-const TURN_GAP_MS = 1800; // pause between turns so everyone sees the played word
+const TURN_GAP_MS = 1800;         // pause after a word so everyone sees it
 const BOARD_UPDATE_DELAY_MS = 900; // let the success flash play before tiles cascade
 const RESULTS_PAUSE_MS = 6000;
 const MAX_PLAYERS = 6;
+
+// Rush-timer mechanic
+const RUSH_GRACE_MS = 15_000;      // waiting players cannot press for first 15 s
+const RUSH_COUNTDOWN_MS = 10_000;  // once unanimous, active player has 10 s
+
+const AI_PLAYER_ID = '__ai__';
+const AI_NAME = 'SpellBot';
+const AI_THINK_MS: Record<AiDifficulty, number> = { easy: 3500, medium: 2200, hard: 1200 };
+const AI_DRAG_STEP_MS = 220;
 
 const START_GEMS = 3;
 const MAX_GEMS = 10;
@@ -29,6 +37,7 @@ interface Player {
   word: string;
   roundPoints: number;
   connected: boolean;
+  isAI: boolean;
 }
 
 interface Room {
@@ -40,13 +49,21 @@ interface Room {
   tiles: BoardTile[];
   turnOrder: string[];
   turnIdx: number;
+  /** 0 while no countdown is running; set to rush expiry when rush is active */
   turnEndsAt: number;
-  timer: ReturnType<typeof setTimeout> | null; // turn timer / gap timer / results timer
+  timer: ReturnType<typeof setTimeout> | null;
   boardTimer: ReturnType<typeof setTimeout> | null;
+  isPvE: boolean;
+  aiDifficulty: AiDifficulty;
+  // ── rush state (reset each turn) ──
+  turnStartedAt: number;       // when the current turn began
+  rushVotes: Set<string>;      // IDs of waiting players who pressed
+  rushActive: boolean;         // the 10 s countdown is live
+  rushEndsAt: number;          // absolute timestamp when countdown expires
 }
 
 const rooms = new Map<string, Room>();
-const socketRoom = new Map<string, string>(); // socket.id -> room code
+const socketRoom = new Map<string, string>();
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function makeCode(): string {
@@ -70,6 +87,7 @@ function roomState(room: Room): RoomState {
     gems: p.gems,
     played: p.played,
     connected: p.connected,
+    isAI: p.isAI || undefined,
   }));
   return {
     code: room.code,
@@ -81,30 +99,67 @@ function roomState(room: Room): RoomState {
     activePlayerId: activePlayerId(room),
     tiles: room.tiles,
     turnEndsAt: room.turnEndsAt,
+    isPvE: room.isPvE,
+    aiDifficulty: room.aiDifficulty,
+    turnStartedAt: room.turnStartedAt,
+    rushVotes: [...room.rushVotes],
+    rushActive: room.rushActive,
+    rushEndsAt: room.rushEndsAt,
+  };
+}
+
+function emptyRoom(overrides: Partial<Room> = {}): Room {
+  return {
+    code: '',
+    hostId: '',
+    phase: 'lobby',
+    players: new Map(),
+    round: 0,
+    tiles: [],
+    turnOrder: [],
+    turnIdx: -1,
+    turnEndsAt: 0,
+    timer: null,
+    boardTimer: null,
+    isPvE: false,
+    aiDifficulty: 'medium',
+    turnStartedAt: 0,
+    rushVotes: new Set(),
+    rushActive: false,
+    rushEndsAt: 0,
+    ...overrides,
   };
 }
 
 export function setupGame(io: Server) {
   io.on('connection', (socket: Socket) => {
+
+    // ── room creation ────────────────────────────────────────────────────────
     socket.on('createRoom', (name: unknown, cb: (res: object) => void) => {
       if (typeof cb !== 'function') return;
       const playerName = sanitizeName(name);
       if (!playerName) return cb({ ok: false, error: 'Enter a name first.' });
       const code = makeCode();
-      const room: Room = {
-        code,
-        hostId: socket.id,
-        phase: 'lobby',
-        players: new Map(),
-        round: 0,
-        tiles: [],
-        turnOrder: [],
-        turnIdx: -1,
-        turnEndsAt: 0,
-        timer: null,
-        boardTimer: null,
-      };
+      const room = emptyRoom({ code, hostId: socket.id });
       room.players.set(socket.id, newPlayer(socket.id, playerName));
+      rooms.set(code, room);
+      socketRoom.set(socket.id, code);
+      socket.join(code);
+      cb({ ok: true, code });
+      io.to(code).emit('roomState', roomState(room));
+    });
+
+    socket.on('startPvE', (name: unknown, difficulty: unknown, cb: (res: object) => void) => {
+      if (typeof cb !== 'function') return;
+      const playerName = sanitizeName(name);
+      if (!playerName) return cb({ ok: false, error: 'Enter a name first.' });
+      const diff: AiDifficulty = ['easy', 'medium', 'hard'].includes(String(difficulty))
+        ? (difficulty as AiDifficulty)
+        : 'medium';
+      const code = makeCode();
+      const room = emptyRoom({ code, hostId: socket.id, isPvE: true, aiDifficulty: diff });
+      room.players.set(socket.id, newPlayer(socket.id, playerName));
+      room.players.set(AI_PLAYER_ID, newAiPlayer());
       rooms.set(code, room);
       socketRoom.set(socket.id, code);
       socket.join(code);
@@ -127,18 +182,56 @@ export function setupGame(io: Server) {
       io.to(room.code).emit('roomState', roomState(room));
     });
 
+    // ── game lifecycle ───────────────────────────────────────────────────────
     socket.on('startGame', () => {
       const room = getRoom(socket);
       if (!room || room.hostId !== socket.id) return;
       if (room.phase !== 'lobby' && room.phase !== 'finished') return;
-      for (const p of room.players.values()) {
-        p.score = 0;
-        p.gems = START_GEMS;
-      }
+      for (const p of room.players.values()) { p.score = 0; p.gems = START_GEMS; }
       room.round = 0;
       startRound(io, room);
     });
 
+    socket.on('playAgain', () => {
+      const room = getRoom(socket);
+      if (!room || room.hostId !== socket.id || room.phase !== 'finished') return;
+      for (const p of room.players.values()) {
+        p.score = 0; p.gems = START_GEMS; p.played = false; p.word = ''; p.roundPoints = 0;
+      }
+      if (room.isPvE && !room.players.has(AI_PLAYER_ID)) {
+        room.players.set(AI_PLAYER_ID, newAiPlayer());
+      }
+      room.phase = 'lobby';
+      room.round = 0;
+      resetRushState(room);
+      io.to(room.code).emit('roomState', roomState(room));
+    });
+
+    // ── rush-timer mechanic ──────────────────────────────────────────────────
+    socket.on('pressStartTimer', (cb: (res: object) => void) => {
+      if (typeof cb !== 'function') return;
+      const room = getRoom(socket);
+      if (!room || room.phase !== 'playing') return cb({ ok: false, error: 'Not in game.' });
+
+      const activeId = activePlayerId(room);
+      if (!activeId || activeId === socket.id) return cb({ ok: false, error: 'You are casting.' });
+
+      // Grace period check (server-authoritative)
+      const elapsed = Date.now() - room.turnStartedAt;
+      if (elapsed < RUSH_GRACE_MS) {
+        const remaining = Math.ceil((RUSH_GRACE_MS - elapsed) / 1000);
+        return cb({ ok: false, error: `Wait ${remaining}s before rushing.` });
+      }
+
+      if (room.rushActive) return cb({ ok: true }); // already rushing
+
+      room.rushVotes.add(socket.id);
+      cb({ ok: true });
+
+      maybeActivateRush(io, room, activeId);
+    });
+
+    // ── word submission / turn actions ───────────────────────────────────────
     socket.on('submitWord', (path: unknown, cb: (res: object) => void) => {
       if (typeof cb !== 'function') return;
       const room = getRoom(socket);
@@ -163,8 +256,6 @@ export function setupGame(io: Server) {
 
       io.to(room.code).emit('wordPlayed', { playerId: player.id, name: player.name, word, points, gemsCollected });
 
-      // cascade: used tiles drop out and fresh ones fall in (slightly delayed
-      // so the submitter's success flash isn't cut short)
       clearBoardTimer(room);
       room.boardTimer = setTimeout(() => {
         for (const idx of p) room.tiles[idx] = freshTile();
@@ -184,6 +275,7 @@ export function setupGame(io: Server) {
       finishTurn(io, room);
     });
 
+    // ── abilities ────────────────────────────────────────────────────────────
     socket.on('useShuffle', (cb: (res: object) => void) => {
       if (typeof cb !== 'function') return;
       const room = getRoom(socket);
@@ -232,18 +324,22 @@ export function setupGame(io: Server) {
       io.to(room.code).emit('roomState', roomState(room));
     });
 
+    // Time-extend only applies while the rush countdown is running
     socket.on('useTimeExtend', (cb: (res: object) => void) => {
       if (typeof cb !== 'function') return;
       const room = getRoom(socket);
       const player = requireActive(room, socket);
       if (!room || !player) return cb({ ok: false, error: 'Not your turn.' });
+      if (!room.rushActive) return cb({ ok: false, error: 'No countdown to extend.' });
       if (player.gems < COST_EXTEND) return cb({ ok: false, error: 'Not enough gems.' });
       player.gems -= COST_EXTEND;
-      room.turnEndsAt += EXTEND_SECONDS * 1000;
+      const extra = EXTEND_SECONDS * 1000;
+      room.rushEndsAt += extra;
+      room.turnEndsAt = room.rushEndsAt;
       clearTimer(room);
-      room.timer = setTimeout(() => onTurnTimeout(io, room), room.turnEndsAt - Date.now());
-      cb({ ok: true, endsAt: room.turnEndsAt });
-      io.to(room.code).emit('turnStart', { playerId: player.id, endsAt: room.turnEndsAt });
+      room.timer = setTimeout(() => onTurnTimeout(io, room), room.rushEndsAt - Date.now());
+      cb({ ok: true, endsAt: room.rushEndsAt });
+      io.to(room.code).emit('turnStart', { playerId: player.id, endsAt: room.rushEndsAt });
       io.to(room.code).emit('roomState', roomState(room));
     });
 
@@ -254,28 +350,19 @@ export function setupGame(io: Server) {
       socket.volatile.to(room.code).emit('remoteDrag', { playerId: socket.id, path });
     });
 
-    socket.on('playAgain', () => {
-      const room = getRoom(socket);
-      if (!room || room.hostId !== socket.id || room.phase !== 'finished') return;
-      for (const p of room.players.values()) {
-        p.score = 0;
-        p.gems = START_GEMS;
-        p.played = false;
-        p.word = '';
-        p.roundPoints = 0;
-      }
-      room.phase = 'lobby';
-      room.round = 0;
-      io.to(room.code).emit('roomState', roomState(room));
-    });
-
     socket.on('leaveRoom', () => removeFromRoom(io, socket));
     socket.on('disconnect', () => removeFromRoom(io, socket));
   });
 }
 
+// ── helpers ─────────────────────────────────────────────────────────────────
+
 function newPlayer(id: string, name: string): Player {
-  return { id, name, score: 0, gems: START_GEMS, played: false, word: '', roundPoints: 0, connected: true };
+  return { id, name, score: 0, gems: START_GEMS, played: false, word: '', roundPoints: 0, connected: true, isAI: false };
+}
+
+function newAiPlayer(): Player {
+  return { id: AI_PLAYER_ID, name: AI_NAME, score: 0, gems: START_GEMS, played: false, word: '', roundPoints: 0, connected: true, isAI: true };
 }
 
 function sanitizeName(name: unknown): string {
@@ -287,14 +374,44 @@ function getRoom(socket: Socket): Room | undefined {
   return code ? rooms.get(code) : undefined;
 }
 
-/** The player, but only if it's their turn right now and they haven't acted yet. */
 function requireActive(room: Room | undefined, socket: Socket): Player | undefined {
   if (!room || room.phase !== 'playing') return undefined;
   if (activePlayerId(room) !== socket.id) return undefined;
   const player = room.players.get(socket.id);
-  if (!player || player.played) return undefined; // turn already finished (gap before next turn)
+  if (!player || player.played) return undefined;
   return player;
 }
+
+function resetRushState(room: Room) {
+  room.turnStartedAt = Date.now();
+  room.rushVotes = new Set();
+  room.rushActive = false;
+  room.rushEndsAt = 0;
+  room.turnEndsAt = 0;
+}
+
+/**
+ * Counts connected non-active, non-AI waiting players and their votes.
+ * If required > 0 and voted >= required, activates the rush countdown.
+ */
+function maybeActivateRush(io: Server, room: Room, activeId: string) {
+  const waitingPlayers = [...room.players.values()].filter(
+    (p) => p.id !== activeId && !p.isAI && p.connected,
+  );
+  const required = waitingPlayers.length;
+  const voted = waitingPlayers.filter((p) => room.rushVotes.has(p.id)).length;
+
+  if (required > 0 && voted >= required) {
+    room.rushActive = true;
+    room.rushEndsAt = Date.now() + RUSH_COUNTDOWN_MS;
+    room.turnEndsAt = room.rushEndsAt;
+    clearTimer(room);
+    room.timer = setTimeout(() => onTurnTimeout(io, room), RUSH_COUNTDOWN_MS);
+  }
+  io.to(room.code).emit('roomState', roomState(room));
+}
+
+// ── core game loop ───────────────────────────────────────────────────────────
 
 function startRound(io: Server, room: Room) {
   room.round += 1;
@@ -303,9 +420,7 @@ function startRound(io: Server, room: Room) {
   room.turnOrder = [...room.players.keys()];
   room.turnIdx = -1;
   for (const p of room.players.values()) {
-    p.played = false;
-    p.word = '';
-    p.roundPoints = 0;
+    p.played = false; p.word = ''; p.roundPoints = 0;
   }
   io.to(room.code).emit('roundStart', { round: room.round, totalRounds: TOTAL_ROUNDS, tiles: room.tiles });
   nextTurn(io, room);
@@ -314,18 +429,32 @@ function startRound(io: Server, room: Room) {
 function nextTurn(io: Server, room: Room) {
   clearTimer(room);
   room.turnIdx += 1;
-  // skip players who left mid-round
-  while (room.turnIdx < room.turnOrder.length && !room.players.has(room.turnOrder[room.turnIdx])) {
+  // skip players who left mid-round (never skip the AI)
+  while (
+    room.turnIdx < room.turnOrder.length &&
+    room.turnOrder[room.turnIdx] !== AI_PLAYER_ID &&
+    !room.players.has(room.turnOrder[room.turnIdx])
+  ) {
     room.turnIdx += 1;
   }
   if (room.turnIdx >= room.turnOrder.length) {
     endRound(io, room);
     return;
   }
-  room.turnEndsAt = Date.now() + TURN_SECONDS * 1000;
-  io.to(room.code).emit('roomState', roomState(room));
-  io.to(room.code).emit('turnStart', { playerId: room.turnOrder[room.turnIdx], endsAt: room.turnEndsAt });
-  room.timer = setTimeout(() => onTurnTimeout(io, room), TURN_SECONDS * 1000);
+
+  resetRushState(room);
+
+  const activeId = room.turnOrder[room.turnIdx];
+  if (activeId === AI_PLAYER_ID) {
+    // AI plays automatically after its think delay; no rush needed (human may still rush below)
+    io.to(room.code).emit('roomState', roomState(room));
+    io.to(room.code).emit('turnStart', { playerId: activeId, endsAt: 0 });
+    room.timer = setTimeout(() => playAiTurn(io, room), AI_THINK_MS[room.aiDifficulty]);
+  } else {
+    // Human turn: unlimited time by default — waiting players can start a rush
+    io.to(room.code).emit('roomState', roomState(room));
+    io.to(room.code).emit('turnStart', { playerId: activeId, endsAt: 0 });
+  }
 }
 
 function onTurnTimeout(io: Server, room: Room) {
@@ -339,7 +468,6 @@ function onTurnTimeout(io: Server, room: Room) {
   nextTurn(io, room);
 }
 
-/** After a word/pass: short gap so everyone sees what happened, then the next turn. */
 function finishTurn(io: Server, room: Room) {
   clearTimer(room);
   io.to(room.code).emit('roomState', roomState(room));
@@ -352,13 +480,7 @@ function endRound(io: Server, room: Room) {
   room.phase = 'roundResults';
 
   const results: RoundResult[] = [...room.players.values()]
-    .map((p) => ({
-      playerId: p.id,
-      name: p.name,
-      word: p.word || '—',
-      points: p.roundPoints,
-      total: p.score,
-    }))
+    .map((p) => ({ playerId: p.id, name: p.name, word: p.word || '—', points: p.roundPoints, total: p.score }))
     .sort((a, b) => b.total - a.total);
 
   io.to(room.code).emit('roomState', roomState(room));
@@ -367,20 +489,12 @@ function endRound(io: Server, room: Room) {
   if (room.round >= TOTAL_ROUNDS) {
     room.timer = setTimeout(() => {
       room.phase = 'finished';
-      // leftover gems convert to 1 point each
       const standings: RoundResult[] = [...room.players.values()]
         .map((p) => {
           const gemBonus = p.gems;
           p.score += gemBonus;
           p.gems = 0;
-          return {
-            playerId: p.id,
-            name: p.name,
-            word: p.word || '—',
-            points: p.roundPoints,
-            total: p.score,
-            gemBonus,
-          };
+          return { playerId: p.id, name: p.name, word: p.word || '—', points: p.roundPoints, total: p.score, gemBonus };
         })
         .sort((a, b) => b.total - a.total);
       io.to(room.code).emit('roomState', roomState(room));
@@ -392,17 +506,10 @@ function endRound(io: Server, room: Room) {
 }
 
 function clearTimer(room: Room) {
-  if (room.timer) {
-    clearTimeout(room.timer);
-    room.timer = null;
-  }
+  if (room.timer) { clearTimeout(room.timer); room.timer = null; }
 }
-
 function clearBoardTimer(room: Room) {
-  if (room.boardTimer) {
-    clearTimeout(room.boardTimer);
-    room.boardTimer = null;
-  }
+  if (room.boardTimer) { clearTimeout(room.boardTimer); room.boardTimer = null; }
 }
 
 function removeFromRoom(io: Server, socket: Socket) {
@@ -415,19 +522,71 @@ function removeFromRoom(io: Server, socket: Socket) {
   room.players.delete(socket.id);
   socket.leave(code);
 
-  if (room.players.size === 0) {
-    clearTimer(room);
-    clearBoardTimer(room);
-    rooms.delete(code);
-    return;
+  const hasHumans = [...room.players.keys()].some((id) => id !== AI_PLAYER_ID);
+  if (room.players.size === 0 || (room.isPvE && !hasHumans)) {
+    clearTimer(room); clearBoardTimer(room); rooms.delete(code); return;
   }
   if (room.hostId === socket.id) {
-    room.hostId = [...room.players.keys()][0];
+    room.hostId = [...room.players.keys()].find((id) => id !== AI_PLAYER_ID) ?? [...room.players.keys()][0];
   }
 
   if (room.phase === 'playing' && wasActive) {
     nextTurn(io, room);
   } else {
-    io.to(code).emit('roomState', roomState(room));
+    // A waiting player disconnected mid-vote — recompute without their vote requirement
+    if (room.phase === 'playing' && !room.rushActive) {
+      const activeId = activePlayerId(room);
+      if (activeId) maybeActivateRush(io, room, activeId);
+      else io.to(code).emit('roomState', roomState(room));
+    } else {
+      io.to(code).emit('roomState', roomState(room));
+    }
   }
+}
+
+// ── AI opponent ──────────────────────────────────────────────────────────────
+
+function playAiTurn(io: Server, room: Room) {
+  if (room.phase !== 'playing') return;
+  const player = room.players.get(AI_PLAYER_ID);
+  if (!player || player.played) return;
+
+  const path = findWordByDifficulty(room.tiles, room.aiDifficulty);
+
+  if (!path) {
+    player.word = ''; player.roundPoints = 0; player.played = true;
+    finishTurn(io, room);
+    return;
+  }
+
+  let step = 0;
+  const drag = setInterval(() => {
+    // Stop if the turn was cancelled (rush timeout beat us)
+    if (room.phase !== 'playing' || player.played) { clearInterval(drag); return; }
+    step++;
+    io.to(room.code).emit('remoteDrag', { playerId: AI_PLAYER_ID, path: path.slice(0, step) });
+    if (step < path.length) return;
+    clearInterval(drag);
+
+    if (player.played) return; // rush expired between the last step and now
+    const word = pathToWord(room.tiles, path);
+    const points = scoreWord(room.tiles, path);
+    const gemsCollected = path.filter((i) => room.tiles[i].gem).length;
+    player.word = word;
+    player.roundPoints = points;
+    player.score += points;
+    player.gems = Math.min(MAX_GEMS, player.gems + gemsCollected);
+    player.played = true;
+
+    io.to(room.code).emit('wordPlayed', { playerId: AI_PLAYER_ID, name: player.name, word, points, gemsCollected });
+
+    clearBoardTimer(room);
+    room.boardTimer = setTimeout(() => {
+      if (room.phase !== 'playing') return;
+      for (const idx of path) room.tiles[idx] = freshTile();
+      io.to(room.code).emit('boardUpdate', { tiles: room.tiles, replaced: path, cause: 'word' });
+    }, BOARD_UPDATE_DELAY_MS);
+
+    finishTurn(io, room);
+  }, AI_DRAG_STEP_MS);
 }
