@@ -216,8 +216,7 @@ export function setupGame(io: Server) {
       const activeId = activePlayerId(room);
       if (!activeId || activeId === socket.id) return cb({ ok: false, error: 'You are casting.' });
 
-      const player = room.players.get(socket.id);
-      if (!player || player.played) return cb({ ok: false, error: 'You already cast this round.' });
+      if (!room.players.has(socket.id)) return cb({ ok: false, error: 'Not in this game.' });
 
       // Grace period check (server-authoritative)
       const elapsed = Date.now() - room.turnStartedAt;
@@ -399,7 +398,7 @@ function resetRushState(room: Room) {
  */
 function maybeActivateRush(io: Server, room: Room, activeId: string) {
   const waitingPlayers = [...room.players.values()].filter(
-    (p) => p.id !== activeId && !p.isAI && !p.played && p.connected,
+    (p) => p.id !== activeId && !p.isAI && p.connected,
   );
   const required = waitingPlayers.length;
   const voted = waitingPlayers.filter((p) => room.rushVotes.has(p.id)).length;

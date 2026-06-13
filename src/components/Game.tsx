@@ -107,12 +107,13 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
   // Rush mechanic derived values
   const graceRemaining = Math.max(0, Math.ceil((RUSH_GRACE_MS - (now - room.turnStartedAt)) / 1000));
   const inGrace = graceRemaining > 0 && room.phase === 'playing';
-  const iAmWaiting = room.phase === 'playing' && room.activePlayerId !== myId && !me?.played && room.activePlayerId !== null;
+  // Any connected player except the active one can see and use the rush button
+  const iAmWaiting = room.phase === 'playing' && room.activePlayerId !== null && room.activePlayerId !== myId;
   const iHaveVoted = room.rushVotes.includes(myId);
 
-  // Only players who haven't cast yet can vote to rush the active caster
+  // Unanimous threshold = all connected non-active, non-AI players
   const waitingPlayers = room.players.filter(
-    (p) => p.id !== room.activePlayerId && !p.isAI && !p.played,
+    (p) => p.id !== room.activePlayerId && !p.isAI,
   );
   const voteCount = waitingPlayers.filter((p) => room.rushVotes.includes(p.id)).length;
   const voteRequired = waitingPlayers.length;
@@ -277,7 +278,7 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
             </h3>
             {room.players.map((p) => {
               const isActive = p.id === room.activePlayerId;
-              const isWaiter = !isActive && !p.isAI && !p.played && room.phase === 'playing';
+              const isWaiter = !isActive && !p.isAI && room.phase === 'playing';
               const voted = room.rushVotes.includes(p.id);
               return (
                 <div
@@ -303,10 +304,6 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
             })}
           </div>
 
-          {/* rush button panel — only for players still waiting to cast this round */}
-          {room.phase === 'playing' && me?.played && room.activePlayerId !== myId && !room.rushActive && waitingPlayers.length > 0 && (
-            <p className="rush-done-note">You already cast — waiting for {activePlayer?.name ?? '…'}</p>
-          )}
           {iAmWaiting && !room.rushActive && (
             <div className="rush-panel">
               {iHaveVoted ? (
