@@ -1,7 +1,7 @@
 import type { Server, Socket } from 'socket.io';
 import type { BoardTile } from '../shared/scoring';
 import { isValidPath, pathToWord, scoreWord, MIN_WORD_LEN } from '../shared/scoring';
-import type { AiDifficulty, PlayerInfo, RoomState, RoundResult } from '../shared/types';
+import type { AiDifficulty, PlayerInfo, PublicRoom, RoomState, RoundResult } from '../shared/types';
 import { freshTile, generateBoard, shuffleBoard } from './board';
 import { findRandomWord, findWordByDifficulty, getDictionary } from './dictionary';
 
@@ -10,6 +10,9 @@ const TURN_GAP_MS = 1800;         // pause after a word so everyone sees it
 const BOARD_UPDATE_DELAY_MS = 900; // let the success flash play before tiles cascade
 const RESULTS_PAUSE_MS = 6000;
 const MAX_PLAYERS = 6;
+
+// Socket.IO room that home-screen clients join to receive live public-lobby updates.
+const LOBBY_CHANNEL = '__lobbies__';
 
 // Rush-timer mechanic
 const RUSH_GRACE_MS = 15_000;      // waiting players cannot press for first 15 s
@@ -54,6 +57,7 @@ interface Room {
   timer: ReturnType<typeof setTimeout> | null;
   boardTimer: ReturnType<typeof setTimeout> | null;
   isPvE: boolean;
+  isPublic: boolean;
   aiDifficulty: AiDifficulty;
   // ── rush state (reset each turn) ──
   turnStartedAt: number;       // when the current turn began
@@ -100,6 +104,7 @@ function roomState(room: Room): RoomState {
     tiles: room.tiles,
     turnEndsAt: room.turnEndsAt,
     isPvE: room.isPvE,
+    isPublic: room.isPublic,
     aiDifficulty: room.aiDifficulty,
     turnStartedAt: room.turnStartedAt,
     rushVotes: [...room.rushVotes],
@@ -122,6 +127,7 @@ function emptyRoom(overrides: Partial<Room> = {}): Room {
     timer: null,
     boardTimer: null,
     isPvE: false,
+    isPublic: false,
     aiDifficulty: 'medium',
     turnStartedAt: 0,
     rushVotes: new Set(),
@@ -177,9 +183,34 @@ export function setupGame(io: Server) {
       if (room.players.size >= MAX_PLAYERS) return cb({ ok: false, error: 'Room is full (6 players max).' });
       room.players.set(socket.id, newPlayer(socket.id, playerName));
       socketRoom.set(socket.id, room.code);
+      socket.leave(LOBBY_CHANNEL); // they're entering a room, stop browsing
       socket.join(room.code);
       cb({ ok: true });
       io.to(room.code).emit('roomState', roomState(room));
+      broadcastLobbies(io); // player count changed
+    });
+
+    // ── public lobby browser ───────────────────────────────────────────────────
+    socket.on('subscribeLobbies', (cb: (res: object) => void) => {
+      socket.join(LOBBY_CHANNEL);
+      if (typeof cb === 'function') cb({ ok: true, rooms: publicRoomList() });
+    });
+
+    socket.on('unsubscribeLobbies', () => {
+      socket.leave(LOBBY_CHANNEL);
+    });
+
+    socket.on('setVisibility', (isPublic: unknown, cb: (res: object) => void) => {
+      if (typeof cb !== 'function') return;
+      const room = getRoom(socket);
+      if (!room) return cb({ ok: false, error: 'Not in a room.' });
+      if (room.hostId !== socket.id) return cb({ ok: false, error: 'Only the host can change this.' });
+      if (room.phase !== 'lobby') return cb({ ok: false, error: 'Only in the lobby.' });
+      if (room.isPvE) return cb({ ok: false, error: 'Solo games cannot be public.' });
+      room.isPublic = Boolean(isPublic);
+      cb({ ok: true });
+      io.to(room.code).emit('roomState', roomState(room));
+      broadcastLobbies(io);
     });
 
     // ── game lifecycle ───────────────────────────────────────────────────────
@@ -190,6 +221,7 @@ export function setupGame(io: Server) {
       for (const p of room.players.values()) { p.score = 0; p.gems = START_GEMS; }
       room.round = 0;
       startRound(io, room);
+      broadcastLobbies(io); // room left the lobby — drop it from the browser
     });
 
     socket.on('playAgain', () => {
@@ -205,6 +237,7 @@ export function setupGame(io: Server) {
       room.round = 0;
       resetRushState(room);
       io.to(room.code).emit('roomState', roomState(room));
+      broadcastLobbies(io); // if public, it reappears in the browser
     });
 
     // ── rush-timer mechanic ──────────────────────────────────────────────────
@@ -377,6 +410,27 @@ function getRoom(socket: Socket): Room | undefined {
   return code ? rooms.get(code) : undefined;
 }
 
+/** Open, public, human-vs-human rooms still in the lobby, for the browser. */
+function publicRoomList(): PublicRoom[] {
+  const list: PublicRoom[] = [];
+  for (const room of rooms.values()) {
+    if (!room.isPublic || room.isPvE || room.phase !== 'lobby') continue;
+    if (room.players.size >= MAX_PLAYERS) continue;
+    const host = room.players.get(room.hostId);
+    list.push({
+      code: room.code,
+      hostName: host?.name ?? '???',
+      playerCount: room.players.size,
+      maxPlayers: MAX_PLAYERS,
+    });
+  }
+  return list.slice(0, 40);
+}
+
+function broadcastLobbies(io: Server) {
+  io.to(LOBBY_CHANNEL).emit('publicRooms', publicRoomList());
+}
+
 function requireActive(room: Room | undefined, socket: Socket): Player | undefined {
   if (!room || room.phase !== 'playing') return undefined;
   if (activePlayerId(room) !== socket.id) return undefined;
@@ -527,7 +581,9 @@ function removeFromRoom(io: Server, socket: Socket) {
 
   const hasHumans = [...room.players.keys()].some((id) => id !== AI_PLAYER_ID);
   if (room.players.size === 0 || (room.isPvE && !hasHumans)) {
-    clearTimer(room); clearBoardTimer(room); rooms.delete(code); return;
+    clearTimer(room); clearBoardTimer(room); rooms.delete(code);
+    broadcastLobbies(io); // room gone
+    return;
   }
   if (room.hostId === socket.id) {
     room.hostId = [...room.players.keys()].find((id) => id !== AI_PLAYER_ID) ?? [...room.players.keys()][0];
@@ -545,6 +601,7 @@ function removeFromRoom(io: Server, socket: Socket) {
       io.to(code).emit('roomState', roomState(room));
     }
   }
+  broadcastLobbies(io); // player count may have changed for a public lobby
 }
 
 // ── AI opponent ──────────────────────────────────────────────────────────────

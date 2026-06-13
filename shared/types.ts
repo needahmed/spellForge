@@ -25,6 +25,14 @@ export type RoomPhase = 'lobby' | 'playing' | 'roundResults' | 'finished';
 
 export type AiDifficulty = 'easy' | 'medium' | 'hard';
 
+/** A joinable public room, as shown in the lobby browser. */
+export interface PublicRoom {
+  code: string;
+  hostName: string;
+  playerCount: number;
+  maxPlayers: number;
+}
+
 export interface RoomState {
   code: string;
   hostId: string;
@@ -46,6 +54,8 @@ export interface RoomState {
   rushActive: boolean;
   /** absolute ms timestamp when the rush countdown expires */
   rushEndsAt: number;
+  /** listed in the public lobby browser (host-controlled, lobby only) */
+  isPublic: boolean;
 }
 
 export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: string }) => void;
@@ -56,6 +66,9 @@ export interface ClientEvents {
   joinRoom: (code: string, name: string, cb: Ack) => void;
   startPvE: (name: string, difficulty: AiDifficulty, cb: Ack<{ code: string }>) => void;
   startGame: () => void;
+  setVisibility: (isPublic: boolean, cb: Ack) => void;
+  subscribeLobbies: (cb: Ack<{ rooms: PublicRoom[] }>) => void;
+  unsubscribeLobbies: () => void;
   pressStartTimer: (cb: Ack) => void;
   submitWord: (path: number[], cb: Ack<{ points: number; gemsCollected: number }>) => void;
   passTurn: () => void;
@@ -71,6 +84,7 @@ export interface ClientEvents {
 // server -> client
 export interface ServerEvents {
   roomState: (state: RoomState) => void;
+  publicRooms: (rooms: PublicRoom[]) => void;
   roundStart: (data: { round: number; totalRounds: number; tiles: BoardTile[] }) => void;
   turnStart: (data: { playerId: string; endsAt: number }) => void;
   wordPlayed: (data: { playerId: string; name: string; word: string; points: number; gemsCollected: number }) => void;

@@ -4,8 +4,8 @@ A turn-based multiplayer word game inspired by Discord SpellCast. Drag across a 
 
 ## How to play
 
-1. One player creates a room and shares the 4-letter code.
-2. Friends join with the code (up to 6 players).
+1. One player creates a room and shares the 4-letter code — or copies the **invite link** (`/?join=CODE`), which drops friends straight into the lobby.
+2. Friends join with the code, the invite link, or by clicking a room in the **public games browser** on the home screen (the host toggles a room Public/Private in the lobby). Up to 6 players.
 3. **Players take turns** (45 seconds each). On your turn, drag through adjacent letters (including diagonals) — a live score badge appears when your word is valid; release to cast it. Invalid words flash red. Everyone else watches your drag live.
 4. After your word, the used tiles drop away and fresh ones fall in for the next player.
 5. When everyone has had a turn, the round ends and a **brand-new board** appears (new DL/2X/gems).
@@ -60,4 +60,5 @@ The server must be reachable by everyone:
 ```sh
 npx tsx scripts/mp-test.ts        # headless 2-player game: turns, gems, abilities, cascade
 npx tsx scripts/spectate-test.ts  # headless player that drags slowly (join it from a browser to watch)
+npx tsx scripts/lobby-test.ts     # public lobby browser: visibility toggle, live list, join-via-code
 ```
