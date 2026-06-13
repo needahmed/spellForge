@@ -77,9 +77,10 @@ const testAbilities = (done: () => void) => {
       a.emit('useSwap', 0, 'E', (res3: { ok: boolean }) => {
         if (res3.ok) fail('swap should fail with 2 gems');
         console.log('swap w/ 2 gems correctly rejected');
+        // Time-extend only applies during a rush countdown; on a normal turn it's rejected.
         a.emit('useTimeExtend', (res4: { ok: boolean }) => {
-          if (!res4.ok) fail('time extend should succeed');
-          console.log('time extend ok (gems 2 -> 1)');
+          if (res4.ok) fail('time extend should be rejected outside a rush');
+          console.log('time extend correctly rejected outside rush');
           done();
         });
       });
