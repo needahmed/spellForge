@@ -1,4 +1,4 @@
-# SpellForge ⚡
+# SpellCasters ⚡
 
 A turn-based multiplayer word game inspired by Discord SpellCast. Drag across a 5×5 letter grid to cast words — highest total score after 5 rounds wins.
 

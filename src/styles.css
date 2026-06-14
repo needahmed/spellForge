@@ -1,19 +1,22 @@
 :root {
-  --bg: #0b1029;
-  --bg2: #131a3d;
-  --panel: #1a2150;
-  --panel-2: #222a63;
-  --tile: #f7f5ef;
-  --tile-text: #14183a;
-  --accent: #ff2ea6; /* magenta trail */
-  --accent-soft: rgba(255, 46, 166, 0.45);
-  --valid: #2effb0;
+  --bg: #04110f;
+  --bg2: #07201a;
+  --panel: #0b2820;
+  --panel-2: #11392e;
+  --tile: #f6f3e7;
+  --tile-text: #143229;
+  --accent: #ffc23a; /* arcane gold — spell trail & primary */
+  --accent-soft: rgba(255, 194, 58, 0.45);
+  --valid: #2effb0; /* jade */
   --valid-soft: rgba(46, 255, 176, 0.45);
-  --error: #ff3b5c;
-  --gold: #ffce3a;
+  --error: #ff5a47; /* ember */
+  --gold: #ffd76a;
+  --gem: #46e8d6; /* aqua gem */
+  --gem-soft: rgba(70, 232, 214, 0.6);
   --cyan: #41e0ff;
-  --text: #eef0ff;
-  --text-dim: #9aa3d4;
+  --ai: #5be0c8;
+  --text: #eafff6;
+  --text-dim: #7fab9b;
 }
 
 * {
@@ -31,8 +34,8 @@ body,
 body {
   font-family: 'Nunito', system-ui, sans-serif;
   background:
-    radial-gradient(1200px 700px at 80% -10%, #232c6e 0%, transparent 55%),
-    radial-gradient(900px 600px at -10% 110%, #1c2466 0%, transparent 55%),
+    radial-gradient(1200px 700px at 80% -10%, #0e4a39 0%, transparent 55%),
+    radial-gradient(900px 600px at -10% 110%, #0a3f48 0%, transparent 55%),
     var(--bg);
   color: var(--text);
   overflow-x: hidden;
@@ -50,11 +53,12 @@ body {
 
 /* ---------- home / lobby ---------- */
 .logo {
+  font-family: 'Cinzel', 'Nunito', serif;
   font-size: 56px;
   font-weight: 900;
   margin: 0;
   letter-spacing: 1px;
-  text-shadow: 0 4px 30px rgba(255, 46, 166, 0.35);
+  text-shadow: 0 4px 30px rgba(255, 194, 58, 0.35);
 }
 .logo span {
   color: var(--accent);
@@ -130,16 +134,16 @@ body {
   cursor: default;
 }
 .btn-primary {
-  background: linear-gradient(180deg, #ff4db6 0%, #e3128f 100%);
-  color: #fff;
-  box-shadow: 0 8px 24px rgba(255, 46, 166, 0.4);
+  background: linear-gradient(180deg, #ffe089 0%, #f2a91a 100%);
+  color: #2a1c00;
+  box-shadow: 0 8px 24px rgba(255, 194, 58, 0.4);
 }
 .btn-primary:hover {
-  filter: brightness(1.1);
+  filter: brightness(1.08);
 }
 .btn-secondary {
-  background: linear-gradient(180deg, #4754d6 0%, #3744b8 100%);
-  color: #fff;
+  background: linear-gradient(180deg, #1fc98f 0%, #129b76 100%);
+  color: #04130d;
 }
 .btn-ghost {
   background: transparent;
@@ -541,8 +545,9 @@ body {
 .badge-2x {
   top: -6px;
   right: -6px;
-  background: linear-gradient(180deg, #ff4db6, #d60f87);
-  box-shadow: 0 0 10px rgba(255, 46, 166, 0.6);
+  background: linear-gradient(180deg, #44f5b6, #12b884);
+  color: #04130d;
+  box-shadow: 0 0 10px rgba(46, 255, 176, 0.6);
 }
 
 .tile-gem {
@@ -550,8 +555,8 @@ body {
   left: 7%;
   bottom: 2%;
   font-size: clamp(11px, 1.8vh, 16px);
-  color: #ff4dd2;
-  text-shadow: 0 0 6px rgba(255, 77, 210, 0.8);
+  color: var(--gem);
+  text-shadow: 0 0 6px rgba(70, 232, 214, 0.8);
   pointer-events: none;
   animation: gem-twinkle 1.6s infinite;
 }
@@ -671,13 +676,13 @@ body {
 }
 .turn-banner.my-turn {
   color: #fff;
-  background: linear-gradient(90deg, rgba(255, 46, 166, 0.25), rgba(65, 224, 255, 0.25));
+  background: linear-gradient(90deg, rgba(255, 194, 58, 0.25), rgba(65, 224, 255, 0.25));
   border-color: var(--accent);
-  box-shadow: 0 0 22px rgba(255, 46, 166, 0.25);
+  box-shadow: 0 0 22px rgba(255, 194, 58, 0.25);
   animation: banner-glow 1.6s infinite;
 }
 @keyframes banner-glow {
-  50% { box-shadow: 0 0 34px rgba(255, 46, 166, 0.45); }
+  50% { box-shadow: 0 0 34px rgba(255, 194, 58, 0.45); }
 }
 
 .play-banner {
@@ -698,7 +703,7 @@ body {
 .play-name { color: var(--cyan); }
 .play-word { letter-spacing: 2px; margin: 0 4px; }
 .play-points { color: var(--valid); margin-left: 4px; }
-.play-gems { color: #ff4dd2; margin-left: 8px; }
+.play-gems { color: var(--gem); margin-left: 8px; }
 
 .hint-banner,
 .pick-hint {
@@ -746,9 +751,9 @@ body {
   align-items: center;
 }
 .my-gems {
-  color: #ff4dd2;
+  color: var(--gem);
   font-size: 15px;
-  text-shadow: 0 0 8px rgba(255, 77, 210, 0.6);
+  text-shadow: 0 0 8px rgba(70, 232, 214, 0.6);
 }
 .ability-btn {
   font: inherit;
@@ -767,7 +772,7 @@ body {
   transition: transform 0.08s, background 0.15s, border-color 0.15s;
 }
 .ability-btn:hover:not(:disabled) {
-  background: rgba(255, 46, 166, 0.15);
+  background: rgba(255, 194, 58, 0.15);
   border-color: var(--accent);
 }
 .ability-btn:active:not(:disabled) {
@@ -778,7 +783,7 @@ body {
   cursor: default;
 }
 .ability-cost {
-  color: #ff4dd2;
+  color: var(--gem);
   font-weight: 900;
 }
 .pass-btn {
@@ -828,8 +833,8 @@ body {
   letter-spacing: 1px;
   padding: 1px 6px;
   border-radius: 999px;
-  background: rgba(157, 111, 255, 0.2);
-  color: #9d6fff;
+  background: rgba(91, 224, 200, 0.2);
+  color: var(--ai);
   margin-left: 6px;
   vertical-align: middle;
 }
@@ -850,8 +855,8 @@ body {
   font-weight: 700;
   text-transform: none;
   letter-spacing: 0.5px;
-  color: #9d6fff;
-  background: rgba(157, 111, 255, 0.15);
+  color: var(--ai);
+  background: rgba(91, 224, 200, 0.15);
   padding: 2px 8px;
   border-radius: 999px;
   margin-left: auto;
@@ -889,12 +894,12 @@ body {
   border: 1px solid rgba(65, 224, 255, 0.25);
 }
 .score-row.is-active {
-  background: rgba(255, 46, 166, 0.12);
-  border: 1px solid rgba(255, 46, 166, 0.45);
-  box-shadow: 0 0 12px rgba(255, 46, 166, 0.2);
+  background: rgba(255, 194, 58, 0.12);
+  border: 1px solid rgba(255, 194, 58, 0.45);
+  box-shadow: 0 0 12px rgba(255, 194, 58, 0.2);
 }
 .score-gems {
-  color: #ff4dd2;
+  color: var(--gem);
   font-weight: 900;
   font-size: 13px;
   min-width: 34px;
@@ -906,7 +911,7 @@ body {
   animation: pulse 1s infinite;
 }
 .gem-bonus {
-  color: #ff4dd2;
+  color: var(--gem);
   font-size: 12px;
   margin-left: 8px;
 }
@@ -1088,7 +1093,7 @@ body {
   color: var(--text);
 }
 .menu-btn:hover:not(:disabled) {
-  background: rgba(255, 46, 166, 0.12);
+  background: rgba(255, 194, 58, 0.12);
   border-color: var(--accent);
 }
 .menu-btn:active:not(:disabled) {
@@ -1153,8 +1158,8 @@ body {
 }
 .diff-card.active {
   border-color: var(--accent);
-  background: rgba(255, 46, 166, 0.12);
-  box-shadow: 0 0 18px rgba(255, 46, 166, 0.2);
+  background: rgba(255, 194, 58, 0.12);
+  box-shadow: 0 0 18px rgba(255, 194, 58, 0.2);
 }
 .diff-icon {
   grid-row: 1 / 3;
@@ -1177,7 +1182,7 @@ body {
 
 /* ── invite banner ── */
 .invite-banner {
-  background: linear-gradient(90deg, rgba(255, 46, 166, 0.18), rgba(65, 224, 255, 0.18));
+  background: linear-gradient(90deg, rgba(255, 194, 58, 0.18), rgba(65, 224, 255, 0.18));
   border: 1px solid var(--accent);
   border-radius: 14px;
   padding: 12px 18px;
@@ -1185,7 +1190,7 @@ body {
   font-size: 15px;
   text-align: center;
   max-width: 400px;
-  box-shadow: 0 0 24px rgba(255, 46, 166, 0.2);
+  box-shadow: 0 0 24px rgba(255, 194, 58, 0.2);
 }
 .invite-banner b {
   color: var(--gold);
@@ -1308,4 +1313,359 @@ body {
   padding: 8px 18px;
   font-size: 14px;
   flex-shrink: 0;
+}
+
+/* ============================================================
+   ✦  ARCANE EMERALD & GOLD — landing hero
+   ============================================================ */
+.arcane-screen {
+  position: relative;
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  justify-content: center;
+  isolation: isolate;
+  padding: 0;
+}
+
+/* ---- ambient background ---- */
+.arcane-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.aura {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 50%;
+  filter: blur(70px);
+  animation: aura-pulse 9s ease-in-out infinite;
+}
+.aura-gold {
+  width: 64vmin;
+  height: 64vmin;
+  background: radial-gradient(circle, rgba(255, 194, 58, 0.32), transparent 70%);
+}
+.aura-jade {
+  width: 86vmin;
+  height: 86vmin;
+  background: radial-gradient(circle, rgba(46, 255, 176, 0.12), transparent 70%);
+  animation-delay: -4s;
+}
+@keyframes aura-pulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.45; }
+  50% { transform: translate(-50%, -50%) scale(1.14); opacity: 0.8; }
+}
+
+/* ---- rotating rune rings ---- */
+.rune-rig {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(88vmin, 640px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+}
+.rune-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transform-origin: 50% 50%;
+}
+.ring-outer { animation: spin 64s linear infinite; }
+.ring-inner { animation: spin 46s linear infinite reverse; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.ring-stroke { fill: none; stroke: rgba(255, 215, 106, 0.16); stroke-width: 1.5; }
+.ring-stroke.faint { stroke: rgba(46, 255, 176, 0.12); }
+.ring-dashed {
+  fill: none;
+  stroke: rgba(255, 194, 58, 0.26);
+  stroke-width: 2;
+  stroke-dasharray: 2 16;
+  stroke-linecap: round;
+}
+.ring-runes {
+  fill: rgba(255, 215, 106, 0.4);
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 27px;
+  letter-spacing: 3px;
+  filter: drop-shadow(0 0 6px rgba(255, 194, 58, 0.35));
+}
+.ring-runes.inner {
+  fill: rgba(46, 255, 176, 0.34);
+  font-size: 21px;
+}
+.ring-core {
+  position: absolute;
+  inset: 33%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 194, 58, 0.1), transparent 70%);
+}
+
+/* ---- floating letter tiles (draggable) ---- */
+/* anchor: holds the page position + drag offset; never animated, so it owns the
+   pointer hitbox and the drag transform without fighting the float bob below. */
+.float-tile {
+  position: absolute;
+  width: clamp(40px, 6.2vmin, 66px);
+  aspect-ratio: 1;
+  z-index: 1;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  transform: translate(calc(-50% + var(--dx, 0px)), calc(-50% + var(--dy, 0px))) scale(var(--s, 1));
+}
+.float-tile.dragging {
+  cursor: grabbing;
+  z-index: 6; /* lift above the hero content while held */
+  --s: 1.12;
+}
+/* inner: the visible tile, carries the gentle float bob + tilt */
+.float-tile-inner {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #f6f3e7, #ded7c2);
+  border-radius: 18%;
+  display: grid;
+  place-items: center;
+  opacity: 0.92;
+  box-shadow:
+    0 6px 0 #b6ad96,
+    0 12px 24px rgba(0, 0, 0, 0.45),
+    0 0 26px rgba(255, 194, 58, 0.22);
+  transform: rotate(var(--rot, 0deg));
+  animation: tile-float var(--dur, 8s) ease-in-out var(--delay, 0s) infinite;
+}
+.float-tile.dragging .float-tile-inner {
+  animation-play-state: paused; /* hold steady under the cursor */
+  opacity: 1;
+  filter: brightness(1.05);
+  box-shadow:
+    0 8px 0 #b6ad96,
+    0 18px 36px rgba(0, 0, 0, 0.5),
+    0 0 40px rgba(255, 194, 58, 0.55);
+}
+.float-letter {
+  font-family: 'Cinzel', serif;
+  font-weight: 900;
+  font-size: clamp(20px, 3.4vmin, 34px);
+  color: var(--tile-text);
+  line-height: 1;
+  pointer-events: none;
+}
+.float-pts {
+  position: absolute;
+  right: 14%;
+  bottom: 9%;
+  font-style: normal;
+  font-size: clamp(8px, 1.3vmin, 12px);
+  font-weight: 800;
+  color: #8c876f;
+  pointer-events: none;
+}
+@keyframes tile-float {
+  0%, 100% { transform: translateY(0) rotate(var(--rot, 0deg)); }
+  50% { transform: translateY(-24px) rotate(calc(var(--rot, 0deg) * -1)); }
+}
+
+/* ---- rising gold embers ---- */
+.mote {
+  position: absolute;
+  bottom: -4%;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffe089, rgba(255, 194, 58, 0));
+  box-shadow: 0 0 8px rgba(255, 194, 58, 0.7);
+  opacity: 0;
+  animation-name: mote-rise;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@keyframes mote-rise {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  10% { opacity: 0.9; }
+  85% { opacity: 0.6; }
+  100% { transform: translateY(-104vh) scale(1.15); opacity: 0; }
+}
+
+/* ---- hero content ---- */
+.arcane-hero {
+  position: relative;
+  z-index: 3;
+  gap: 12px;
+  pointer-events: none; /* let tiles behind the hero box still be grabbed */
+}
+.btn-cast {
+  pointer-events: auto;
+}
+.hero-kicker {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  font-size: clamp(10px, 1.6vmin, 14px);
+  color: var(--gold);
+  opacity: 0.9;
+  text-shadow: 0 0 14px rgba(255, 194, 58, 0.5);
+  animation: fade-in 1s ease both;
+}
+.logo-hero {
+  font-family: 'Cinzel', serif;
+  font-weight: 900;
+  font-size: clamp(46px, 10.5vw, 112px);
+  line-height: 1;
+  letter-spacing: 2px;
+  margin: 0;
+  background: linear-gradient(180deg, #fff7e0 0%, #ffd76a 45%, #f2a91a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 6px 34px rgba(255, 194, 58, 0.4));
+  animation: title-rise 0.9s cubic-bezier(0.2, 1.1, 0.3, 1) both;
+}
+.logo-hero span {
+  background: linear-gradient(180deg, #d9fff0 0%, #2effb0 55%, #12c98a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+@keyframes title-rise {
+  from { opacity: 0; transform: translateY(18px) scale(0.94); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.title-trail {
+  width: clamp(230px, 44vw, 460px);
+  height: 32px;
+  margin-top: -4px;
+  overflow: visible;
+}
+.trail-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 6px var(--accent-soft));
+  stroke-dasharray: 640;
+  stroke-dashoffset: 640;
+  animation: trail-draw 1.6s ease forwards 0.35s;
+}
+@keyframes trail-draw { to { stroke-dashoffset: 0; } }
+.trail-node {
+  fill: var(--gold);
+  filter: drop-shadow(0 0 6px var(--accent-soft));
+  opacity: 0;
+  animation: node-pop 0.45s ease forwards;
+}
+@keyframes node-pop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.arcane-tagline {
+  color: var(--text-dim);
+  font-weight: 700;
+  font-size: clamp(13px, 2vmin, 18px);
+  margin: 4px 0 2px;
+  letter-spacing: 0.3px;
+  animation: fade-in 1.2s ease both 0.3s;
+}
+
+/* ---- the cast / play button ---- */
+.btn-cast {
+  position: relative;
+  overflow: hidden;
+  font-family: 'Cinzel', serif;
+  font-weight: 900;
+  font-size: clamp(19px, 2.6vmin, 26px);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #2a1c00;
+  background: linear-gradient(180deg, #ffe89a 0%, #ffc23a 55%, #f0a014 100%);
+  border: none;
+  border-radius: 16px;
+  padding: 15px 56px;
+  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(255, 194, 58, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  animation: cast-bob 2.6s ease-in-out infinite, fade-in 1s ease both 0.5s;
+  transition: box-shadow 0.2s, filter 0.15s;
+}
+.btn-cast:hover {
+  filter: brightness(1.07);
+  box-shadow: 0 16px 44px rgba(255, 194, 58, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.btn-cast:active { transform: scale(0.97); }
+@keyframes cast-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.cast-rune {
+  font-size: 0.74em;
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.5));
+}
+.cast-label { position: relative; z-index: 1; }
+.cast-shimmer {
+  position: absolute;
+  top: 0;
+  left: -60%;
+  width: 45%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.7), transparent);
+  transform: skewX(-20deg);
+  animation: cast-shimmer 3.4s ease-in-out infinite;
+}
+@keyframes cast-shimmer {
+  0% { left: -60%; }
+  55%, 100% { left: 140%; }
+}
+
+/* ---- hero stat chips ---- */
+.hero-stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+  color: var(--text-dim);
+  font-weight: 800;
+  font-size: clamp(10px, 1.5vmin, 13px);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  animation: fade-in 1.4s ease both 0.7s;
+}
+.hero-stats i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 8px var(--accent-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aura, .ring-outer, .ring-inner, .float-tile-inner, .mote,
+  .btn-cast, .cast-shimmer, .winner-crown {
+    animation: none !important;
+  }
+  .trail-line { stroke-dashoffset: 0; }
+  .trail-node, .logo-hero, .hero-kicker, .arcane-tagline, .hero-stats { opacity: 1; }
+}
+
+/* keep the hero tight on short screens so it never scrolls */
+@media (max-height: 560px) {
+  .arcane-hero { gap: 7px; }
+  .hero-stats { margin-top: 8px; }
+  .float-tile { display: none; }
 }

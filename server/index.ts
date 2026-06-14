@@ -26,9 +26,9 @@ if (isProd) {
   app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
 } else {
   // In dev the Vite server (5173) serves the client and proxies /socket.io here.
-  app.get('/', (_req, res) => res.send('SpellForge socket server. Use the Vite dev server on :5173.'));
+  app.get('/', (_req, res) => res.send('SpellCasters socket server. Use the Vite dev server on :5173.'));
 }
 
 server.listen(PORT, () => {
-  console.log(`SpellForge server listening on http://localhost:${PORT}`);
+  console.log(`SpellCasters server listening on http://localhost:${PORT}`);
 });

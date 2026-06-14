@@ -162,7 +162,7 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
     const winner = standings[0];
     return (
       <div className="screen game-over">
-        <h1 className="logo logo-small">Spell<span>Forge</span></h1>
+        <h1 className="logo logo-small">Spell<span>Casters</span></h1>
         <div className="card">
           <div className="winner-crown">👑</div>
           <h2 className="winner-name">{winner.name} wins!</h2>

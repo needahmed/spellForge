@@ -22,6 +22,140 @@ const DIFFICULTIES: { id: AiDifficulty; label: string; desc: string; icon: strin
   { id: 'hard', label: 'Hard', desc: 'Hunts for the longest words', icon: '🔥' },
 ];
 
+// ── arcane landing decor (module-level so they don't reshuffle on re-render) ──
+// The letters of N-E-E-D-A-H-M-E-D-S, scattered out of order around the hero.
+const FLOAT_TILES = [
+  { ch: 'E', pt: 1, x: 14, y: 20, d: 0.0, dur: 7.2, rot: -8 },
+  { ch: 'D', pt: 2, x: 33, y: 10, d: 1.2, dur: 8.6, rot: 6 },
+  { ch: 'A', pt: 1, x: 60, y: 9, d: 1.6, dur: 8.4, rot: 4 },
+  { ch: 'E', pt: 1, x: 85, y: 18, d: 0.5, dur: 9.0, rot: 11 },
+  { ch: 'N', pt: 1, x: 93, y: 42, d: 2.1, dur: 7.6, rot: -12 },
+  { ch: 'M', pt: 3, x: 90, y: 72, d: 0.9, dur: 8.8, rot: 9 },
+  { ch: 'S', pt: 1, x: 68, y: 88, d: 2.6, dur: 7.9, rot: -6 },
+  { ch: 'E', pt: 1, x: 42, y: 91, d: 0.3, dur: 9.3, rot: 12 },
+  { ch: 'H', pt: 4, x: 18, y: 82, d: 1.9, dur: 8.2, rot: -10 },
+  { ch: 'D', pt: 2, x: 8, y: 52, d: 0.7, dur: 9.5, rot: 7 },
+];
+
+const MOTES = Array.from({ length: 16 }, (_, i) => ({
+  x: (i * 61 + 7) % 100,
+  d: (i % 8) * 0.9,
+  dur: 7 + (i % 6) * 1.4,
+  sz: 3 + (i % 3),
+}));
+
+/** Two counter-rotating rings of arcane letters orbiting a glowing core. */
+function RuneRing() {
+  const outer = 'ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOP'.split('').join(' ');
+  const inner = 'AEIOULNRST'.split('').join('   ');
+  return (
+    <div className="rune-rig" aria-hidden="true">
+      <svg className="rune-ring ring-outer" viewBox="0 0 600 600">
+        <defs>
+          <path id="ringPathOuter" d="M300,300 m-252,0 a252,252 0 1,1 504,0 a252,252 0 1,1 -504,0" />
+        </defs>
+        <circle cx="300" cy="300" r="252" className="ring-stroke" />
+        <circle cx="300" cy="300" r="270" className="ring-dashed" />
+        <text className="ring-runes">
+          <textPath href="#ringPathOuter" startOffset="0">{outer}</textPath>
+        </text>
+      </svg>
+      <svg className="rune-ring ring-inner" viewBox="0 0 600 600">
+        <defs>
+          <path id="ringPathInner" d="M300,300 m-168,0 a168,168 0 1,1 336,0 a168,168 0 1,1 -336,0" />
+        </defs>
+        <circle cx="300" cy="300" r="168" className="ring-stroke faint" />
+        <text className="ring-runes inner">
+          <textPath href="#ringPathInner" startOffset="0">{inner}</textPath>
+        </text>
+      </svg>
+      <div className="ring-core" />
+    </div>
+  );
+}
+
+/** A floating letter tile the player can grab and fling around the hero. */
+function FloatTile({ t }: { t: (typeof FLOAT_TILES)[number] }) {
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const start = useRef({ px: 0, py: 0, ox: 0, oy: 0 });
+
+  const onDown = (e: React.PointerEvent) => {
+    start.current = { px: e.clientX, py: e.clientY, ox: offset.x, oy: offset.y };
+    setDragging(true);
+    // keep receiving moves even if the pointer slips off the tile; never let a
+    // capture failure abort the drag.
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* no-op */
+    }
+  };
+  const onMove = (e: React.PointerEvent) => {
+    if (!dragging) return;
+    setOffset({
+      x: start.current.ox + (e.clientX - start.current.px),
+      y: start.current.oy + (e.clientY - start.current.py),
+    });
+  };
+  const onUp = (e: React.PointerEvent) => {
+    setDragging(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* no-op */
+    }
+  };
+
+  return (
+    <div
+      className={`float-tile${dragging ? ' dragging' : ''}`}
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      onPointerCancel={onUp}
+      style={
+        {
+          left: `${t.x}%`,
+          top: `${t.y}%`,
+          '--rot': `${t.rot}deg`,
+          '--dur': `${t.dur}s`,
+          '--delay': `${t.d}s`,
+          '--dx': `${offset.x}px`,
+          '--dy': `${offset.y}px`,
+        } as React.CSSProperties
+      }
+    >
+      <div className="float-tile-inner">
+        <span className="float-letter">{t.ch}</span>
+        <i className="float-pts">{t.pt}</i>
+      </div>
+    </div>
+  );
+}
+
+/** A spell-trail flourish that draws itself beneath the wordmark. */
+function TitleTrail() {
+  const nodes: [number, number][] = [
+    [12, 28], [78, 10], [150, 26], [222, 30], [292, 12], [348, 16],
+  ];
+  return (
+    <svg className="title-trail" viewBox="0 0 360 40" preserveAspectRatio="none" aria-hidden="true">
+      <path className="trail-line" d="M12,28 C55,6 110,6 150,26 S250,38 292,12 348,16 348,16" />
+      {nodes.map(([cx, cy], i) => (
+        <circle
+          key={i}
+          className="trail-node"
+          cx={cx}
+          cy={cy}
+          r={i === 0 || i === nodes.length - 1 ? 4.5 : 3.5}
+          style={{ animationDelay: `${0.9 + i * 0.13}s` }}
+        />
+      ))}
+    </svg>
+  );
+}
+
 export default function App() {
   const [room, setRoom] = useState<RoomState | null>(null);
   const [myId, setMyId] = useState<string>(socket.id ?? '');
@@ -149,16 +283,50 @@ export default function App() {
   // ── landing ──
   if (view === 'landing') {
     return (
-      <div className="screen landing">
-        <div className="landing-inner">
-          <h1 className="logo logo-xl">
-            Spell<span>Forge</span>
-          </h1>
-          <p className="tagline">Connect letters. Cast words. Crush your friends.</p>
-          <button className="btn btn-primary btn-play" onClick={() => setView('menu')}>
-            ▶ Play
-          </button>
+      <div className="screen landing arcane-screen">
+        <div className="arcane-bg" aria-hidden="true">
+          <div className="aura aura-gold" />
+          <div className="aura aura-jade" />
+          <RuneRing />
+          {MOTES.map((m, i) => (
+            <span
+              key={i}
+              className="mote"
+              style={{
+                left: `${m.x}%`,
+                width: m.sz,
+                height: m.sz,
+                animationDelay: `${m.d}s`,
+                animationDuration: `${m.dur}s`,
+              }}
+            />
+          ))}
+          {FLOAT_TILES.map((t, i) => (
+            <FloatTile key={i} t={t} />
+          ))}
         </div>
+
+        <div className="landing-inner arcane-hero">
+          <div className="hero-kicker">✦&nbsp;&nbsp;Arcane Word Duels&nbsp;&nbsp;✦</div>
+          <h1 className="logo logo-hero">
+            Spell<span>Casters</span>
+          </h1>
+          <TitleTrail />
+          <p className="arcane-tagline">Connect the runes. Cast the word. Conquer the realm.</p>
+          <button className="btn btn-cast" onClick={() => setView('menu')}>
+            <span className="cast-rune">▶</span>
+            <span className="cast-label">Play</span>
+            <span className="cast-shimmer" />
+          </button>
+          <div className="hero-stats">
+            <span>5×5 Rune Grid</span>
+            <i />
+            <span>Duel Friends</span>
+            <i />
+            <span>Cast vs AI</span>
+          </div>
+        </div>
+
         {error && <div className="toast">{error}</div>}
       </div>
     );
@@ -333,7 +501,7 @@ function Screen({
   return (
     <div className="screen menu-screen">
       <h1 className="logo logo-small">
-        Spell<span>Forge</span>
+        Spell<span>Casters</span>
       </h1>
       {children}
       <button className="btn btn-ghost back-link" onClick={onBack}>
@@ -376,7 +544,7 @@ function Lobby({
   return (
     <div className="screen home">
       <h1 className="logo logo-small">
-        Spell<span>Forge</span>
+        Spell<span>Casters</span>
       </h1>
       <div className="card">
         <label className="field-label">Room code — share with friends</label>
@@ -407,11 +575,11 @@ function Lobby({
             <div className="player-row" key={p.id}>
               <span
                 className="player-dot"
-                style={p.isAI ? { background: '#9d6fff', boxShadow: '0 0 8px #9d6fff' } : {}}
+                style={p.isAI ? { background: 'var(--ai)', boxShadow: '0 0 8px var(--ai)' } : {}}
               />
               <span className="player-name">{p.name}</span>
               {p.isAI && (
-                <span className="host-tag" style={{ background: 'rgba(157,111,255,0.18)', color: '#9d6fff' }}>
+                <span className="host-tag" style={{ background: 'rgba(91, 224, 200, 0.18)', color: 'var(--ai)' }}>
                   AI
                 </span>
               )}
