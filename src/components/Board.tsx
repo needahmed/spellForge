@@ -266,7 +266,8 @@ export function Board({
               <span className="tile-letter">{tile.letter}</span>
               <span className="tile-points">{LETTER_VALUES[tile.letter] * tile.letterMult}</span>
               {tile.gem && <span className="tile-gem">♦</span>}
-              {tile.letterMult > 1 && <span className="badge badge-dl">DL</span>}
+              {tile.letterMult === 2 && <span className="badge badge-dl">DL</span>}
+              {tile.letterMult === 3 && <span className="badge badge-tl">TL</span>}
               {tile.wordMult > 1 && <span className="badge badge-2x">2X</span>}
             </div>
           );
