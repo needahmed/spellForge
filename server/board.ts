@@ -14,6 +14,10 @@ function randomLetter(): string {
   return LETTER_BAG[Math.floor(Math.random() * LETTER_BAG.length)];
 }
 
+function pickRandomIdx(): number {
+  return Math.floor(Math.random() * GRID * GRID);
+}
+
 /** A plain cascaded-in tile: random letter, no bonuses, chance of a gem. */
 export function freshTile(): BoardTile {
   return { letter: randomLetter(), letterMult: 1, wordMult: 1, gem: Math.random() < REPLACE_GEM_CHANCE };
@@ -34,13 +38,32 @@ export function generateBoard(): BoardTile[] {
     gem: false,
   }));
 
-  // One Double Letter tile, one 2X Word tile, and a few gems, all on distinct cells.
+  // One letter boost (60% DL / 40% TL), one 2X Word tile, and a few gems, all on distinct cells.
   const special = pickDistinct(size, 2 + GEM_TILES_PER_BOARD);
-  tiles[special[0]].letterMult = 2;
+  tiles[special[0]].letterMult = Math.random() < 0.6 ? 2 : 3;
   tiles[special[1]].wordMult = 2;
   for (let i = 2; i < special.length; i++) tiles[special[i]].gem = true;
 
   return tiles;
+}
+
+/**
+ * Moves the 2x word boost to a completely random tile position (fully random,
+ * can land on the same tile). Clears any existing word boost first.
+ */
+export function relocateWordBoost(tiles: BoardTile[]): void {
+  for (const t of tiles) t.wordMult = 1;
+  tiles[pickRandomIdx()].wordMult = 2;
+}
+
+/**
+ * Flips the letter boost type (60% DL / 40% TL) and moves it to a completely
+ * random tile position (fully random, can land on the same tile).
+ * Clears any existing letter boost first.
+ */
+export function relocateLetterBoost(tiles: BoardTile[]): void {
+  for (const t of tiles) t.letterMult = 1;
+  tiles[pickRandomIdx()].letterMult = Math.random() < 0.6 ? 2 : 3;
 }
 
 /** In-place Fisher-Yates shuffle — tiles keep their bonuses/gems, only positions change. */

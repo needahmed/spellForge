@@ -2,7 +2,7 @@ import type { Server, Socket } from 'socket.io';
 import type { BoardTile } from '../shared/scoring';
 import { isValidPath, pathToWord, scoreWord, MIN_WORD_LEN } from '../shared/scoring';
 import type { AiDifficulty, PlayerInfo, PublicRoom, RoomState, RoundResult } from '../shared/types';
-import { freshTile, generateBoard, shuffleBoard } from './board';
+import { freshTile, generateBoard, relocateLetterBoost, relocateWordBoost, shuffleBoard } from './board';
 import { findRandomWord, findWordByDifficulty, getDictionary } from './dictionary';
 
 const TOTAL_ROUNDS = 5;
@@ -280,6 +280,9 @@ export function setupGame(io: Server) {
       if (word.length < MIN_WORD_LEN || !getDictionary().has(word)) {
         return cb({ ok: false, error: `"${word}" is not a valid word.` });
       }
+      // Capture boost usage before tiles are replaced
+      const usedWordBoost = p.some((i) => room.tiles[i].wordMult > 1);
+      const usedLetterBoost = p.some((i) => room.tiles[i].letterMult > 1);
       const points = scoreWord(room.tiles, p);
       const gemsCollected = p.filter((i) => room.tiles[i].gem).length;
       player.word = word;
@@ -294,6 +297,9 @@ export function setupGame(io: Server) {
       clearBoardTimer(room);
       room.boardTimer = setTimeout(() => {
         for (const idx of p) room.tiles[idx] = freshTile();
+        // Relocate used boosts so the next player sees fresh positions
+        if (usedWordBoost) relocateWordBoost(room.tiles);
+        if (usedLetterBoost) relocateLetterBoost(room.tiles);
         io.to(room.code).emit('boardUpdate', { tiles: room.tiles, replaced: p, cause: 'word' });
       }, BOARD_UPDATE_DELAY_MS);
 
@@ -472,7 +478,14 @@ function maybeActivateRush(io: Server, room: Room, activeId: string) {
 function startRound(io: Server, room: Room) {
   room.round += 1;
   room.phase = 'playing';
-  room.tiles = generateBoard();
+  if (room.round === 1) {
+    // First round: generate a fresh board with randomised letters and initial boosts.
+    room.tiles = generateBoard();
+  } else {
+    // Subsequent rounds: the letter grid persists unchanged.
+    // Only the 2x word boost relocates; the letter boost stays put.
+    relocateWordBoost(room.tiles);
+  }
   room.turnOrder = [...room.players.keys()];
   room.turnIdx = -1;
   for (const p of room.players.values()) {
@@ -628,6 +641,9 @@ function playAiTurn(io: Server, room: Room) {
     clearInterval(drag);
 
     if (player.played) return; // rush expired between the last step and now
+    // Capture boost usage before tiles are replaced
+    const usedWordBoost = path.some((i) => room.tiles[i].wordMult > 1);
+    const usedLetterBoost = path.some((i) => room.tiles[i].letterMult > 1);
     const word = pathToWord(room.tiles, path);
     const points = scoreWord(room.tiles, path);
     const gemsCollected = path.filter((i) => room.tiles[i].gem).length;
@@ -643,6 +659,8 @@ function playAiTurn(io: Server, room: Room) {
     room.boardTimer = setTimeout(() => {
       if (room.phase !== 'playing') return;
       for (const idx of path) room.tiles[idx] = freshTile();
+      if (usedWordBoost) relocateWordBoost(room.tiles);
+      if (usedLetterBoost) relocateLetterBoost(room.tiles);
       io.to(room.code).emit('boardUpdate', { tiles: room.tiles, replaced: path, cause: 'word' });
     }, BOARD_UPDATE_DELAY_MS);
 

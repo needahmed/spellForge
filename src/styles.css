@@ -537,10 +537,16 @@ body {
 .badge-dl {
   top: -6px;
   left: -6px;
-  background: #b8860b;
   background: linear-gradient(180deg, #ffce3a, #d99e00);
   color: #3a2a00;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+.badge-tl {
+  top: -6px;
+  left: -6px;
+  background: linear-gradient(180deg, #d87cff, #8b20e0);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(140, 32, 224, 0.5);
 }
 .badge-2x {
   top: -6px;
@@ -584,6 +590,7 @@ body {
   60% { opacity: 1; }
   100% { transform: translateY(0) scale(1); opacity: 1; }
 }
+
 
 .board-pick .tile {
   cursor: crosshair;
@@ -1129,6 +1136,12 @@ body {
   font-size: 13px;
   font-weight: 700;
   margin: 2px 0 0;
+}
+.input-error {
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 700;
+  margin: -4px 0 0;
 }
 
 /* ── difficulty cards ── */
