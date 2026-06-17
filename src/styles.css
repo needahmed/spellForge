@@ -585,6 +585,7 @@ body {
   100% { transform: translateY(0) scale(1); opacity: 1; }
 }
 
+
 .board-pick .tile {
   cursor: crosshair;
 }
@@ -1129,6 +1130,12 @@ body {
   font-size: 13px;
   font-weight: 700;
   margin: 2px 0 0;
+}
+.input-error {
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 700;
+  margin: -4px 0 0;
 }
 
 /* ── difficulty cards ── */

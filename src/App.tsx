@@ -167,7 +167,6 @@ export default function App() {
   const [invitedCode, setInvitedCode] = useState('');
   const [publicRooms, setPublicRooms] = useState<PublicRoom[]>([]);
   const [view, setView] = useState<View>('landing');
-  const autoJoinedRef = useRef(false);
 
   useEffect(() => {
     loadDictionary();
@@ -228,7 +227,7 @@ export default function App() {
   };
 
   const createLobby = (isPublic: boolean) => {
-    if (!name.trim()) return setError('Pick a wizard name first!');
+    if (name.trim().length < 2) return setError('Name must be at least 2 characters.');
     setBusy(true);
     socket.emit('createRoom', name.trim(), (res: { ok: boolean; error?: string }) => {
       if (!res.ok) {
@@ -242,11 +241,12 @@ export default function App() {
   };
 
   const joinWithCode = (code: string) => {
-    if (!name.trim()) return setError('Pick a wizard name first!');
+    const trimmedName = name.trim();
+    if (trimmedName.length < 2) return setError('Name must be at least 2 characters.');
     const clean = code.trim().toUpperCase();
     if (!clean) return setError('Enter a room code.');
     setBusy(true);
-    socket.emit('joinRoom', clean, name.trim(), (res: { ok: boolean; error?: string }) => {
+    socket.emit('joinRoom', clean, trimmedName, (res: { ok: boolean; error?: string }) => {
       setBusy(false);
       if (!res.ok) {
         setError(res.error ?? 'Could not join room.');
@@ -256,7 +256,7 @@ export default function App() {
   };
 
   const playVsAI = () => {
-    if (!name.trim()) return setError('Pick a wizard name first!');
+    if (name.trim().length < 2) return setError('Name must be at least 2 characters.');
     setBusy(true);
     socket.emit('startPvE', name.trim(), aiDifficulty, (res: { ok: boolean; error?: string }) => {
       setBusy(false);
@@ -264,15 +264,6 @@ export default function App() {
       socket.emit('startGame'); // solo vs AI: skip the redundant lobby, go straight to the board
     });
   };
-
-  // Auto-join from an invite link once we have a name and a live connection.
-  useEffect(() => {
-    if (invitedCode && name.trim() && !room && !busy && !autoJoinedRef.current) {
-      autoJoinedRef.current = true;
-      joinWithCode(invitedCode);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invitedCode, name, room, busy]);
 
   // ── in a room: lobby or game ──
   if (room) {
@@ -334,13 +325,15 @@ export default function App() {
 
   // ── main menu (name + 3 options) ──
   if (view === 'menu') {
-    const ready = !!name.trim();
+    const trimmedName = name.trim();
+    const nameOk = trimmedName.length >= 2;
+    const nameTooShort = trimmedName.length > 0 && trimmedName.length < 2;
     return (
       <Screen onBack={() => setView('landing')} error={error}>
         {invitedCode && (
           <div className="invite-banner">
             🎉 You're invited to room <b>{invitedCode}</b>
-            {!ready && ' — enter your name to join!'}
+            {!nameOk && ' — enter your name to join!'}
           </div>
         )}
         <div className="card">
@@ -351,24 +344,39 @@ export default function App() {
             placeholder="WizardLizard"
             value={name}
             onChange={(e) => saveName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && invitedCode) joinWithCode(invitedCode);
+            }}
             autoFocus
           />
+          {nameTooShort && (
+            <p className="input-error">Name must be at least 2 characters.</p>
+          )}
+          {invitedCode && (
+            <button
+              className="btn btn-primary"
+              disabled={!nameOk || busy}
+              onClick={() => joinWithCode(invitedCode)}
+            >
+              Join Room {invitedCode}
+            </button>
+          )}
           <div className="menu-options">
-            <button className="menu-btn" disabled={!ready} onClick={() => setView('createLobby')}>
+            <button className="menu-btn" disabled={!nameOk} onClick={() => setView('createLobby')}>
               <span className="menu-btn-icon">🏰</span>
               <span className="menu-btn-text">
                 <b>Create Lobby</b>
                 <small>Host a game for your friends</small>
               </span>
             </button>
-            <button className="menu-btn" disabled={!ready} onClick={() => setView('joinPublic')}>
+            <button className="menu-btn" disabled={!nameOk} onClick={() => setView('joinPublic')}>
               <span className="menu-btn-icon">🌐</span>
               <span className="menu-btn-text">
                 <b>Join Public Game</b>
                 <small>Hop into an open match</small>
               </span>
             </button>
-            <button className="menu-btn" disabled={!ready} onClick={() => setView('playAI')}>
+            <button className="menu-btn" disabled={!nameOk} onClick={() => setView('playAI')}>
               <span className="menu-btn-icon">🤖</span>
               <span className="menu-btn-text">
                 <b>Play with AI</b>
@@ -376,7 +384,7 @@ export default function App() {
               </span>
             </button>
           </div>
-          {!ready && <p className="menu-hint">Enter a name to continue ↑</p>}
+          {!nameOk && !nameTooShort && <p className="menu-hint">Enter a name (2+ chars) to continue ↑</p>}
         </div>
       </Screen>
     );
