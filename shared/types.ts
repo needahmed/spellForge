@@ -43,17 +43,18 @@ export interface RoomState {
   activePlayerId: string | null;
   /** current board — lets late-mounting clients render without waiting for the next event */
   tiles: BoardTile[];
-  turnEndsAt: number;
   isPvE: boolean;
   aiDifficulty: AiDifficulty;
-  /** absolute ms timestamp when the current turn started (for 15 s grace countdown) */
-  turnStartedAt: number;
+  /** whether the current turn has a rush-voting lifecycle */
+  rushAvailable: boolean;
+  /** set by the server after the grace period; clients never calculate eligibility */
+  rushVotingOpen: boolean;
   /** player IDs that have pressed Start Timer this turn */
   rushVotes: string[];
-  /** the 10-second countdown is now running */
+  /** the server-owned countdown is now running */
   rushActive: boolean;
-  /** absolute ms timestamp when the rush countdown expires */
-  rushEndsAt: number;
+  /** whole seconds left, decremented and broadcast only by the server */
+  rushSecondsRemaining: number;
   /** listed in the public lobby browser (host-controlled, lobby only) */
   isPublic: boolean;
 }
@@ -75,7 +76,7 @@ export interface ClientEvents {
   useShuffle: (cb: Ack) => void;
   useSwap: (idx: number, letter: string, cb: Ack) => void;
   useHint: (cb: Ack<{ path: number[] }>) => void;
-  useTimeExtend: (cb: Ack<{ endsAt: number }>) => void;
+  useTimeExtend: (cb: Ack<{ secondsRemaining: number }>) => void;
   dragPath: (path: number[]) => void;
   playAgain: () => void;
   leaveRoom: () => void;
@@ -86,7 +87,7 @@ export interface ServerEvents {
   roomState: (state: RoomState) => void;
   publicRooms: (rooms: PublicRoom[]) => void;
   roundStart: (data: { round: number; totalRounds: number; tiles: BoardTile[] }) => void;
-  turnStart: (data: { playerId: string; endsAt: number }) => void;
+  turnStart: (data: { playerId: string }) => void;
   wordPlayed: (data: { playerId: string; name: string; word: string; points: number; gemsCollected: number }) => void;
   boardUpdate: (data: { tiles: BoardTile[]; replaced: number[]; cause: 'word' | 'shuffle' | 'swap' }) => void;
   remoteDrag: (data: { playerId: string; path: number[] }) => void;

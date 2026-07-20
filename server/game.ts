@@ -2,6 +2,7 @@ import type { Server, Socket } from 'socket.io';
 import type { BoardTile } from '../shared/scoring';
 import { isValidPath, pathToWord, scoreWord, MIN_WORD_LEN } from '../shared/scoring';
 import type { AiDifficulty, PlayerInfo, PublicRoom, RoomState, RoundResult } from '../shared/types';
+import { RUSH_COUNTDOWN_SECONDS, RUSH_GRACE_MS } from '../shared/rush';
 import { freshTile, generateBoard, relocateLetterBoost, relocateWordBoost, shuffleBoard } from './board';
 import { findRandomWord, findWordByDifficulty, getDictionary } from './dictionary';
 
@@ -13,10 +14,6 @@ const MAX_PLAYERS = 6;
 
 // Socket.IO room that home-screen clients join to receive live public-lobby updates.
 const LOBBY_CHANNEL = '__lobbies__';
-
-// Rush-timer mechanic
-const RUSH_GRACE_MS = 15_000;      // waiting players cannot press for first 15 s
-const RUSH_COUNTDOWN_MS = 10_000;  // once unanimous, active player has 10 s
 
 const AI_PLAYER_ID = '__ai__';
 const AI_NAME = 'SpellBot';
@@ -52,18 +49,19 @@ interface Room {
   tiles: BoardTile[];
   turnOrder: string[];
   turnIdx: number;
-  /** 0 while no countdown is running; set to rush expiry when rush is active */
-  turnEndsAt: number;
   timer: ReturnType<typeof setTimeout> | null;
   boardTimer: ReturnType<typeof setTimeout> | null;
   isPvE: boolean;
   isPublic: boolean;
   aiDifficulty: AiDifficulty;
   // ── rush state (reset each turn) ──
-  turnStartedAt: number;       // when the current turn began
+  rushAvailable: boolean;      // a turn is active and has a rush lifecycle
+  rushVotingOpen: boolean;     // grace period completed on the server
   rushVotes: Set<string>;      // IDs of waiting players who pressed
-  rushActive: boolean;         // the 10 s countdown is live
-  rushEndsAt: number;          // absolute timestamp when countdown expires
+  rushActive: boolean;         // the server countdown is live
+  rushSecondsRemaining: number;
+  rushGraceTimer: ReturnType<typeof setTimeout> | null;
+  rushTicker: ReturnType<typeof setInterval> | null;
 }
 
 const rooms = new Map<string, Room>();
@@ -102,14 +100,14 @@ function roomState(room: Room): RoomState {
     totalRounds: TOTAL_ROUNDS,
     activePlayerId: activePlayerId(room),
     tiles: room.tiles,
-    turnEndsAt: room.turnEndsAt,
     isPvE: room.isPvE,
     isPublic: room.isPublic,
     aiDifficulty: room.aiDifficulty,
-    turnStartedAt: room.turnStartedAt,
+    rushAvailable: room.rushAvailable,
+    rushVotingOpen: room.rushVotingOpen,
     rushVotes: [...room.rushVotes],
     rushActive: room.rushActive,
-    rushEndsAt: room.rushEndsAt,
+    rushSecondsRemaining: room.rushSecondsRemaining,
   };
 }
 
@@ -123,16 +121,18 @@ function emptyRoom(overrides: Partial<Room> = {}): Room {
     tiles: [],
     turnOrder: [],
     turnIdx: -1,
-    turnEndsAt: 0,
     timer: null,
     boardTimer: null,
     isPvE: false,
     isPublic: false,
     aiDifficulty: 'medium',
-    turnStartedAt: 0,
+    rushAvailable: false,
+    rushVotingOpen: false,
     rushVotes: new Set(),
     rushActive: false,
-    rushEndsAt: 0,
+    rushSecondsRemaining: 0,
+    rushGraceTimer: null,
+    rushTicker: null,
     ...overrides,
   };
 }
@@ -235,7 +235,7 @@ export function setupGame(io: Server) {
       }
       room.phase = 'lobby';
       room.round = 0;
-      resetRushState(room);
+      clearRushState(room);
       io.to(room.code).emit('roomState', roomState(room));
       broadcastLobbies(io); // if public, it reappears in the browser
     });
@@ -250,13 +250,8 @@ export function setupGame(io: Server) {
       if (!activeId || activeId === socket.id) return cb({ ok: false, error: 'You are casting.' });
 
       if (!room.players.has(socket.id)) return cb({ ok: false, error: 'Not in this game.' });
-
-      // Grace period check (server-authoritative)
-      const elapsed = Date.now() - room.turnStartedAt;
-      if (elapsed < RUSH_GRACE_MS) {
-        const remaining = Math.ceil((RUSH_GRACE_MS - elapsed) / 1000);
-        return cb({ ok: false, error: `Wait ${remaining}s before rushing.` });
-      }
+      if (!room.rushAvailable) return cb({ ok: false, error: 'The next turn is starting.' });
+      if (!room.rushVotingOpen) return cb({ ok: false, error: 'Rush voting is not open yet.' });
 
       if (room.rushActive) return cb({ ok: true }); // already rushing
 
@@ -374,13 +369,8 @@ export function setupGame(io: Server) {
       if (!room.rushActive) return cb({ ok: false, error: 'No countdown to extend.' });
       if (player.gems < COST_EXTEND) return cb({ ok: false, error: 'Not enough gems.' });
       player.gems -= COST_EXTEND;
-      const extra = EXTEND_SECONDS * 1000;
-      room.rushEndsAt += extra;
-      room.turnEndsAt = room.rushEndsAt;
-      clearTimer(room);
-      room.timer = setTimeout(() => onTurnTimeout(io, room), room.rushEndsAt - Date.now());
-      cb({ ok: true, endsAt: room.rushEndsAt });
-      io.to(room.code).emit('turnStart', { playerId: player.id, endsAt: room.rushEndsAt });
+      room.rushSecondsRemaining += EXTEND_SECONDS;
+      cb({ ok: true, secondsRemaining: room.rushSecondsRemaining });
       io.to(room.code).emit('roomState', roomState(room));
     });
 
@@ -444,12 +434,26 @@ function requireActive(room: Room | undefined, socket: Socket): Player | undefin
   return player;
 }
 
-function resetRushState(room: Room) {
-  room.turnStartedAt = Date.now();
+function clearRushState(room: Room) {
+  clearRushGraceTimer(room);
+  clearRushTicker(room);
+  room.rushAvailable = false;
+  room.rushVotingOpen = false;
   room.rushVotes = new Set();
   room.rushActive = false;
-  room.rushEndsAt = 0;
-  room.turnEndsAt = 0;
+  room.rushSecondsRemaining = 0;
+}
+
+function beginRushState(io: Server, room: Room) {
+  clearRushState(room);
+  room.rushAvailable = true;
+  const turnIdx = room.turnIdx;
+  room.rushGraceTimer = setTimeout(() => {
+    room.rushGraceTimer = null;
+    if (room.phase !== 'playing' || room.turnIdx !== turnIdx || !room.rushAvailable) return;
+    room.rushVotingOpen = true;
+    io.to(room.code).emit('roomState', roomState(room));
+  }, RUSH_GRACE_MS);
 }
 
 /**
@@ -460,15 +464,15 @@ function maybeActivateRush(io: Server, room: Room, activeId: string) {
   const waitingPlayers = [...room.players.values()].filter(
     (p) => p.id !== activeId && !p.isAI && p.connected,
   );
-  const required = waitingPlayers.length;
-  const voted = waitingPlayers.filter((p) => room.rushVotes.has(p.id)).length;
+  const allWaitingPlayersVoted = waitingPlayers.length > 0
+    && waitingPlayers.every((player) => room.rushVotes.has(player.id));
 
-  if (required > 0 && voted >= required) {
+  if (room.rushVotingOpen && allWaitingPlayersVoted) {
+    clearRushGraceTimer(room);
     room.rushActive = true;
-    room.rushEndsAt = Date.now() + RUSH_COUNTDOWN_MS;
-    room.turnEndsAt = room.rushEndsAt;
-    clearTimer(room);
-    room.timer = setTimeout(() => onTurnTimeout(io, room), RUSH_COUNTDOWN_MS);
+    room.rushVotingOpen = false;
+    room.rushSecondsRemaining = RUSH_COUNTDOWN_SECONDS;
+    startRushTicker(io, room);
   }
   io.to(room.code).emit('roomState', roomState(room));
 }
@@ -511,18 +515,18 @@ function nextTurn(io: Server, room: Room) {
     return;
   }
 
-  resetRushState(room);
+  beginRushState(io, room);
 
   const activeId = room.turnOrder[room.turnIdx];
   if (activeId === AI_PLAYER_ID) {
     // AI plays automatically after its think delay; no rush needed (human may still rush below)
     io.to(room.code).emit('roomState', roomState(room));
-    io.to(room.code).emit('turnStart', { playerId: activeId, endsAt: 0 });
+    io.to(room.code).emit('turnStart', { playerId: activeId });
     room.timer = setTimeout(() => playAiTurn(io, room), AI_THINK_MS[room.aiDifficulty]);
   } else {
     // Human turn: unlimited time by default — waiting players can start a rush
     io.to(room.code).emit('roomState', roomState(room));
-    io.to(room.code).emit('turnStart', { playerId: activeId, endsAt: 0 });
+    io.to(room.code).emit('turnStart', { playerId: activeId });
   }
 }
 
@@ -539,6 +543,7 @@ function onTurnTimeout(io: Server, room: Room) {
 
 function finishTurn(io: Server, room: Room) {
   clearTimer(room);
+  clearRushState(room);
   io.to(room.code).emit('roomState', roomState(room));
   room.timer = setTimeout(() => nextTurn(io, room), TURN_GAP_MS);
 }
@@ -546,6 +551,7 @@ function finishTurn(io: Server, room: Room) {
 function endRound(io: Server, room: Room) {
   if (room.phase !== 'playing') return;
   clearTimer(room);
+  clearRushState(room);
   room.phase = 'roundResults';
 
   const results: RoundResult[] = [...room.players.values()]
@@ -577,6 +583,29 @@ function endRound(io: Server, room: Room) {
 function clearTimer(room: Room) {
   if (room.timer) { clearTimeout(room.timer); room.timer = null; }
 }
+function clearRushGraceTimer(room: Room) {
+  if (room.rushGraceTimer) { clearTimeout(room.rushGraceTimer); room.rushGraceTimer = null; }
+}
+function clearRushTicker(room: Room) {
+  if (room.rushTicker) { clearInterval(room.rushTicker); room.rushTicker = null; }
+}
+function startRushTicker(io: Server, room: Room) {
+  clearRushTicker(room);
+  const turnIdx = room.turnIdx;
+  room.rushTicker = setInterval(() => {
+    if (room.phase !== 'playing' || room.turnIdx !== turnIdx || !room.rushActive) {
+      clearRushTicker(room);
+      return;
+    }
+    room.rushSecondsRemaining -= 1;
+    if (room.rushSecondsRemaining <= 0) {
+      clearRushTicker(room);
+      onTurnTimeout(io, room);
+      return;
+    }
+    io.to(room.code).emit('roomState', roomState(room));
+  }, 1_000);
+}
 function clearBoardTimer(room: Room) {
   if (room.boardTimer) { clearTimeout(room.boardTimer); room.boardTimer = null; }
 }
@@ -593,7 +622,7 @@ function removeFromRoom(io: Server, socket: Socket) {
 
   const hasHumans = [...room.players.keys()].some((id) => id !== AI_PLAYER_ID);
   if (room.players.size === 0 || (room.isPvE && !hasHumans)) {
-    clearTimer(room); clearBoardTimer(room); rooms.delete(code);
+    clearTimer(room); clearBoardTimer(room); clearRushState(room); rooms.delete(code);
     broadcastLobbies(io); // room gone
     return;
   }

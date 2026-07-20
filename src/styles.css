@@ -396,6 +396,28 @@ body {
 .round-pill span {
   color: var(--text-dim);
 }
+.turn-elapsed {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 7px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  white-space: nowrap;
+}
+.turn-elapsed span {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.turn-elapsed b {
+  min-width: 36px;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
 .timer {
   flex: 1;
   display: flex;
@@ -413,8 +435,10 @@ body {
   height: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, var(--cyan), var(--accent));
-  transition: width 0.25s linear;
+  transition: width 1s linear;
+  will-change: width;
 }
+.timer-fill.timer-fill-start { transition: none; }
 .timer-fill.timer-low {
   background: var(--error);
 }

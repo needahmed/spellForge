@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react';
 import type { BoardTile } from '../../shared/scoring';
+import { RUSH_COUNTDOWN_SECONDS } from '../../shared/rush';
 import type { RoomState, RoundResult } from '../../shared/types';
 import { socket } from '../lib/socket';
 import { Board } from './Board';
 
-const RUSH_GRACE_MS = 15_000;
-const RUSH_COUNTDOWN_MS = 10_000;
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+const SHOW_TURN_ELAPSED_CLOCK = true; // Change to false to hide the display-only turn clock.
+
+function formatElapsedTime(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = String(totalSeconds % 60).padStart(2, '0');
+  return `${minutes}:${seconds}`;
+}
 
 interface LastPlay {
   playerId: string;
@@ -29,7 +35,7 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
   const [roundResults, setRoundResults] = useState<RoundResult[] | null>(null);
   const [standings, setStandings] = useState<RoundResult[] | null>(null);
   const [toast, setToast] = useState('');
-  const [now, setNow] = useState(Date.now());
+  const [turnElapsedSeconds, setTurnElapsedSeconds] = useState(0);
 
   useEffect(() => {
     const onRoundStart = (data: { round: number; tiles: BoardTile[] }) => {
@@ -75,12 +81,6 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
     };
   }, []);
 
-  // 250 ms clock tick for countdown displays
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(t);
-  }, []);
-
   useEffect(() => {
     if (lastPlay) {
       const t = setTimeout(() => setLastPlay(null), 2600);
@@ -97,6 +97,14 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
 
   useEffect(() => { setRemotePath([]); }, [room.activePlayerId]);
 
+  // Display-only clock. It never feeds into rush eligibility or server game state.
+  useEffect(() => { setTurnElapsedSeconds(0); }, [room.activePlayerId, room.round]);
+  useEffect(() => {
+    if (!SHOW_TURN_ELAPSED_CLOCK || room.phase !== 'playing' || !room.rushAvailable) return;
+    const ticker = setInterval(() => setTurnElapsedSeconds((seconds) => seconds + 1), 1_000);
+    return () => clearInterval(ticker);
+  }, [room.activePlayerId, room.phase, room.rushAvailable]);
+
   // ── derived state ──────────────────────────────────────────────────────────
   const me = room.players.find((p) => p.id === myId);
   const myGems = me?.gems ?? 0;
@@ -105,10 +113,12 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
   const isMyTurn = room.phase === 'playing' && room.activePlayerId === myId && !(me?.played);
 
   // Rush mechanic derived values
-  const graceRemaining = Math.max(0, Math.ceil((RUSH_GRACE_MS - (now - room.turnStartedAt)) / 1000));
-  const inGrace = graceRemaining > 0 && room.phase === 'playing';
+  const inGrace = room.rushAvailable && !room.rushVotingOpen && room.phase === 'playing';
   // Any connected player except the active one can see and use the rush button
-  const iAmWaiting = room.phase === 'playing' && room.activePlayerId !== null && room.activePlayerId !== myId;
+  const iAmWaiting = room.phase === 'playing'
+    && room.rushAvailable
+    && room.activePlayerId !== null
+    && room.activePlayerId !== myId;
   const iHaveVoted = room.rushVotes.includes(myId);
 
   // Unanimous threshold = all connected non-active, non-AI players
@@ -120,12 +130,8 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
   const hasAnyVotes = room.phase === 'playing' && waitingPlayers.length > 0 && (voteCount > 0 || room.rushActive);
 
   // Timer bar (only meaningful when rush is active)
-  const rushSecsLeft = room.rushActive
-    ? Math.max(0, Math.ceil((room.rushEndsAt - now) / 1000))
-    : 0;
-  const rushFrac = room.rushActive
-    ? Math.max(0, Math.min(1, (room.rushEndsAt - now) / RUSH_COUNTDOWN_MS))
-    : 0;
+  const rushSecsLeft = room.rushActive ? room.rushSecondsRemaining : 0;
+  const rushFrac = room.rushActive ? Math.min(1, rushSecsLeft / RUSH_COUNTDOWN_SECONDS) : 0;
 
   const submitWord = (path: number[]) =>
     new Promise<{ ok: boolean; error?: string }>((resolve) => {
@@ -214,11 +220,17 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
         <div className="round-pill">
           Round {round}<span>/{room.totalRounds}</span>
         </div>
+        {SHOW_TURN_ELAPSED_CLOCK && room.phase === 'playing' && room.activePlayerId && (
+          <div className="turn-elapsed" title="Elapsed time this turn (display only)">
+            <span>Turn</span>
+            <b>{formatElapsedTime(turnElapsedSeconds)}</b>
+          </div>
+        )}
         {/* Timer bar: only shown during rush countdown */}
         <div className="timer">
           <div className="timer-bar">
             <div
-              className={`timer-fill ${room.rushActive && rushSecsLeft <= 5 ? 'timer-low' : ''} ${room.rushActive ? '' : 'timer-idle'}`}
+              className={`timer-fill ${room.rushActive && rushSecsLeft <= 5 ? 'timer-low' : ''} ${room.rushActive ? '' : 'timer-idle'} ${room.rushActive && rushSecsLeft === RUSH_COUNTDOWN_SECONDS ? 'timer-fill-start' : ''}`}
               style={{ width: room.rushActive ? `${rushFrac * 100}%` : '0%' }}
             />
           </div>
@@ -312,7 +324,7 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
                 </button>
               ) : inGrace ? (
                 <button className="rush-btn rush-btn-disabled" disabled>
-                  Rush ({graceRemaining}s)
+                  Rush unlocks shortly…
                 </button>
               ) : (
                 <button className="rush-btn rush-btn-ready" onClick={pressRush}>
