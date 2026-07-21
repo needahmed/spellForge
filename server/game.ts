@@ -3,7 +3,7 @@ import type { BoardTile } from '../shared/scoring';
 import { isValidPath, pathToWord, scoreWord, MIN_WORD_LEN } from '../shared/scoring';
 import type { AiDifficulty, PlayerInfo, PublicRoom, RoomState, RoundResult } from '../shared/types';
 import { RUSH_COUNTDOWN_SECONDS, RUSH_GRACE_MS } from '../shared/rush';
-import { freshTile, generateBoard, relocateLetterBoost, relocateWordBoost, shuffleBoard } from './board';
+import { freshTile, generateBoard, relocateLetterBoost, relocateWordBoost, shuffleBoard, spreadGems } from './board';
 import { findRandomWord, findWordByDifficulty, getDictionary } from './dictionary';
 
 const TOTAL_ROUNDS = 5;
@@ -292,6 +292,7 @@ export function setupGame(io: Server) {
       clearBoardTimer(room);
       room.boardTimer = setTimeout(() => {
         for (const idx of p) room.tiles[idx] = freshTile();
+        spreadGems(room.tiles);
         // Relocate used boosts so the next player sees fresh positions
         if (usedWordBoost) relocateWordBoost(room.tiles);
         if (usedLetterBoost) relocateLetterBoost(room.tiles);
@@ -688,6 +689,7 @@ function playAiTurn(io: Server, room: Room) {
     room.boardTimer = setTimeout(() => {
       if (room.phase !== 'playing') return;
       for (const idx of path) room.tiles[idx] = freshTile();
+      spreadGems(room.tiles);
       if (usedWordBoost) relocateWordBoost(room.tiles);
       if (usedLetterBoost) relocateLetterBoost(room.tiles);
       io.to(room.code).emit('boardUpdate', { tiles: room.tiles, replaced: path, cause: 'word' });

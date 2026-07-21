@@ -11,8 +11,8 @@
   --valid-soft: rgba(46, 255, 176, 0.45);
   --error: #ff5a47; /* ember */
   --gold: #ffd76a;
-  --gem: #46e8d6; /* aqua gem */
-  --gem-soft: rgba(70, 232, 214, 0.6);
+  --gem: #ff003c; /* shocking red gem */
+  --gem-soft: rgba(255, 0, 60, 0.72);
   --cyan: #41e0ff;
   --ai: #5be0c8;
   --text: #eafff6;
@@ -586,7 +586,7 @@ body {
   bottom: 2%;
   font-size: clamp(11px, 1.8vh, 16px);
   color: var(--gem);
-  text-shadow: 0 0 6px rgba(70, 232, 214, 0.8);
+  text-shadow: 0 0 7px var(--gem-soft), 0 0 14px var(--gem-soft);
   pointer-events: none;
   animation: gem-twinkle 1.6s infinite;
 }
