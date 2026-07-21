@@ -7,8 +7,7 @@ const LETTER_BAG =
   'EEEEEEEEEEAAAAAAAAAIIIIIIIIOOOOOOONNNNNNRRRRRRTTTTTTTSSSSSSLLLLDDDDGGGUUUUCCCMMMHHHBBPPFFYYWWKVJXQZ';
 
 const VOWELS = new Set(['A', 'E', 'I', 'O', 'U']);
-const GEM_TILES_PER_BOARD = 4;
-const REPLACE_GEM_CHANCE = 0.18;
+export const GEM_TILES_PER_BOARD = 8;
 
 function randomLetter(): string {
   return LETTER_BAG[Math.floor(Math.random() * LETTER_BAG.length)];
@@ -18,9 +17,9 @@ function pickRandomIdx(): number {
   return Math.floor(Math.random() * GRID * GRID);
 }
 
-/** A plain cascaded-in tile: random letter, no bonuses, chance of a gem. */
+/** A plain cascaded-in tile; gems are redistributed after the full cascade. */
 export function freshTile(): BoardTile {
-  return { letter: randomLetter(), letterMult: 1, wordMult: 1, gem: Math.random() < REPLACE_GEM_CHANCE };
+  return { letter: randomLetter(), letterMult: 1, wordMult: 1, gem: false };
 }
 
 export function generateBoard(): BoardTile[] {
@@ -38,11 +37,13 @@ export function generateBoard(): BoardTile[] {
     gem: false,
   }));
 
-  // One letter boost (60% DL / 40% TL), one 2X Word tile, and a few gems, all on distinct cells.
-  const special = pickDistinct(size, 2 + GEM_TILES_PER_BOARD);
-  tiles[special[0]].letterMult = Math.random() < 0.6 ? 2 : 3;
-  tiles[special[1]].wordMult = 2;
-  for (let i = 2; i < special.length; i++) tiles[special[i]].gem = true;
+  // Gems are separated by at least one cell in every direction. Bonuses use
+  // other cells so all initial board features remain visually distinct.
+  const gemIndices = pickSpreadIndices(GEM_TILES_PER_BOARD);
+  const bonusIndices = pickDistinct(size, 2, new Set(gemIndices));
+  tiles[bonusIndices[0]].letterMult = Math.random() < 0.6 ? 2 : 3;
+  tiles[bonusIndices[1]].wordMult = 2;
+  for (const idx of gemIndices) tiles[idx].gem = true;
 
   return tiles;
 }
@@ -72,15 +73,39 @@ export function shuffleBoard(tiles: BoardTile[]): void {
     const j = Math.floor(Math.random() * (i + 1));
     [tiles[i], tiles[j]] = [tiles[j], tiles[i]];
   }
+  spreadGems(tiles);
 }
 
-function pickDistinct(size: number, count: number): number[] {
+/** Restores the named gem count using the same non-clustered board slots. */
+export function spreadGems(tiles: BoardTile[]): void {
+  for (const tile of tiles) tile.gem = false;
+  for (const idx of pickSpreadIndices(GEM_TILES_PER_BOARD)) tiles[idx].gem = true;
+}
+
+function pickDistinct(size: number, count: number, excluded: ReadonlySet<number> = new Set()): number[] {
   const picked: number[] = [];
   while (picked.length < count) {
     const idx = Math.floor(Math.random() * size);
-    if (!picked.includes(idx)) picked.push(idx);
+    if (!excluded.has(idx) && !picked.includes(idx)) picked.push(idx);
   }
   return picked;
+}
+
+function pickSpreadIndices(count: number): number[] {
+  // Every other row and column gives each gem a full one-tile buffer, including
+  // diagonals. A 5x5 board has nine such slots; one is randomly omitted at 8.
+  const candidates: number[] = [];
+  for (let row = 0; row < GRID; row += 2) {
+    for (let col = 0; col < GRID; col += 2) candidates.push(row * GRID + col);
+  }
+  if (count > candidates.length) {
+    throw new Error(`GEM_TILES_PER_BOARD cannot exceed ${candidates.length} with spread placement.`);
+  }
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+  return candidates.slice(0, count);
 }
 
 function vowelCountOk(letters: string[]): boolean {
