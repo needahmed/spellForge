@@ -24,6 +24,13 @@ export interface BoardTile {
   gem: boolean;
 }
 
+export type AppliedBoostType = 'DL' | 'TL' | '2X';
+
+export interface AppliedBoost {
+  letterIndex: number;
+  type: AppliedBoostType;
+}
+
 export function scoreWord(tiles: BoardTile[], path: number[]): number {
   let sum = 0;
   let wordMult = 1;
@@ -35,6 +42,17 @@ export function scoreWord(tiles: BoardTile[], path: number[]): number {
   let total = sum * wordMult;
   if (path.length >= 6) total += LONG_WORD_BONUS;
   return total;
+}
+
+export function getAppliedBoosts(tiles: BoardTile[], path: number[]): AppliedBoost[] {
+  const boosts: AppliedBoost[] = [];
+  path.forEach((idx, letterIndex) => {
+    const tile = tiles[idx];
+    if (tile.letterMult === 2) boosts.push({ letterIndex, type: 'DL' });
+    if (tile.letterMult === 3) boosts.push({ letterIndex, type: 'TL' });
+    if (tile.wordMult > 1) boosts.push({ letterIndex, type: '2X' });
+  });
+  return boosts;
 }
 
 export function isAdjacent(a: number, b: number): boolean {

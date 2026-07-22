@@ -1,4 +1,11 @@
-import type { BoardTile } from './scoring';
+import type { AppliedBoost, BoardTile } from './scoring';
+
+export interface WordHistoryEntry {
+  round: number;
+  word: string;
+  score: number;
+  boosts: AppliedBoost[];
+}
 
 export interface PlayerInfo {
   id: string;
@@ -9,6 +16,8 @@ export interface PlayerInfo {
   played: boolean;
   connected: boolean;
   isAI?: boolean;
+  /** completed turns, most recent first */
+  wordHistory: WordHistoryEntry[];
 }
 
 export interface RoundResult {

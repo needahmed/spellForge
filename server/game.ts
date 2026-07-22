@@ -1,7 +1,8 @@
 import type { Server, Socket } from 'socket.io';
 import type { BoardTile } from '../shared/scoring';
-import { isValidPath, pathToWord, scoreWord, MIN_WORD_LEN } from '../shared/scoring';
-import type { AiDifficulty, PlayerInfo, PublicRoom, RoomState, RoundResult } from '../shared/types';
+import { getAppliedBoosts, isValidPath, pathToWord, scoreWord, MIN_WORD_LEN } from '../shared/scoring';
+import type { AppliedBoost } from '../shared/scoring';
+import type { AiDifficulty, PlayerInfo, PublicRoom, RoomState, RoundResult, WordHistoryEntry } from '../shared/types';
 import { RUSH_COUNTDOWN_SECONDS, RUSH_GRACE_MS } from '../shared/rush';
 import { freshTile, generateBoard, relocateLetterBoost, relocateWordBoost, shuffleBoard, spreadGems } from './board';
 import { findRandomWord, findWordByDifficulty, getDictionary } from './dictionary';
@@ -38,6 +39,7 @@ interface Player {
   roundPoints: number;
   connected: boolean;
   isAI: boolean;
+  wordHistory: WordHistoryEntry[];
 }
 
 interface Room {
@@ -90,6 +92,10 @@ function roomState(room: Room): RoomState {
     played: p.played,
     connected: p.connected,
     isAI: p.isAI || undefined,
+    wordHistory: p.wordHistory.map((entry) => ({
+      ...entry,
+      boosts: entry.boosts.map((boost) => ({ ...boost })),
+    })),
   }));
   return {
     code: room.code,
@@ -218,7 +224,9 @@ export function setupGame(io: Server) {
       const room = getRoom(socket);
       if (!room || room.hostId !== socket.id) return;
       if (room.phase !== 'lobby' && room.phase !== 'finished') return;
-      for (const p of room.players.values()) { p.score = 0; p.gems = START_GEMS; }
+      for (const p of room.players.values()) {
+        p.score = 0; p.gems = START_GEMS; p.played = false; p.word = ''; p.roundPoints = 0; p.wordHistory = [];
+      }
       room.round = 0;
       startRound(io, room);
       broadcastLobbies(io); // room left the lobby — drop it from the browser
@@ -228,7 +236,7 @@ export function setupGame(io: Server) {
       const room = getRoom(socket);
       if (!room || room.hostId !== socket.id || room.phase !== 'finished') return;
       for (const p of room.players.values()) {
-        p.score = 0; p.gems = START_GEMS; p.played = false; p.word = ''; p.roundPoints = 0;
+        p.score = 0; p.gems = START_GEMS; p.played = false; p.word = ''; p.roundPoints = 0; p.wordHistory = [];
       }
       if (room.isPvE && !room.players.has(AI_PLAYER_ID)) {
         room.players.set(AI_PLAYER_ID, newAiPlayer());
@@ -279,12 +287,14 @@ export function setupGame(io: Server) {
       const usedWordBoost = p.some((i) => room.tiles[i].wordMult > 1);
       const usedLetterBoost = p.some((i) => room.tiles[i].letterMult > 1);
       const points = scoreWord(room.tiles, p);
+      const boosts = getAppliedBoosts(room.tiles, p);
       const gemsCollected = p.filter((i) => room.tiles[i].gem).length;
       player.word = word;
       player.roundPoints = points;
       player.score += points;
       player.gems = Math.min(MAX_GEMS, player.gems + gemsCollected);
       player.played = true;
+      recordTurn(room, player, word, points, boosts);
       cb({ ok: true, points, gemsCollected });
 
       io.to(room.code).emit('wordPlayed', { playerId: player.id, name: player.name, word, points, gemsCollected });
@@ -309,6 +319,7 @@ export function setupGame(io: Server) {
       player.word = '';
       player.roundPoints = 0;
       player.played = true;
+      recordTurn(room, player);
       finishTurn(io, room);
     });
 
@@ -390,11 +401,11 @@ export function setupGame(io: Server) {
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 function newPlayer(id: string, name: string): Player {
-  return { id, name, score: 0, gems: START_GEMS, played: false, word: '', roundPoints: 0, connected: true, isAI: false };
+  return { id, name, score: 0, gems: START_GEMS, played: false, word: '', roundPoints: 0, connected: true, isAI: false, wordHistory: [] };
 }
 
 function newAiPlayer(): Player {
-  return { id: AI_PLAYER_ID, name: AI_NAME, score: 0, gems: START_GEMS, played: false, word: '', roundPoints: 0, connected: true, isAI: true };
+  return { id: AI_PLAYER_ID, name: AI_NAME, score: 0, gems: START_GEMS, played: false, word: '', roundPoints: 0, connected: true, isAI: true, wordHistory: [] };
 }
 
 function sanitizeName(name: unknown): string {
@@ -433,6 +444,17 @@ function requireActive(room: Room | undefined, socket: Socket): Player | undefin
   const player = room.players.get(socket.id);
   if (!player || player.played) return undefined;
   return player;
+}
+
+function recordTurn(
+  room: Room,
+  player: Player,
+  word = '—',
+  score = 0,
+  boosts: AppliedBoost[] = [],
+) {
+  if (player.wordHistory.some((entry) => entry.round === room.round)) return;
+  player.wordHistory.unshift({ round: room.round, word, score, boosts });
 }
 
 function clearRushState(room: Room) {
@@ -538,6 +560,7 @@ function onTurnTimeout(io: Server, room: Room) {
     player.word = '';
     player.roundPoints = 0;
     player.played = true;
+    recordTurn(room, player);
   }
   nextTurn(io, room);
 }
@@ -657,6 +680,7 @@ function playAiTurn(io: Server, room: Room) {
 
   if (!path) {
     player.word = ''; player.roundPoints = 0; player.played = true;
+    recordTurn(room, player);
     finishTurn(io, room);
     return;
   }
@@ -676,12 +700,14 @@ function playAiTurn(io: Server, room: Room) {
     const usedLetterBoost = path.some((i) => room.tiles[i].letterMult > 1);
     const word = pathToWord(room.tiles, path);
     const points = scoreWord(room.tiles, path);
+    const boosts = getAppliedBoosts(room.tiles, path);
     const gemsCollected = path.filter((i) => room.tiles[i].gem).length;
     player.word = word;
     player.roundPoints = points;
     player.score += points;
     player.gems = Math.min(MAX_GEMS, player.gems + gemsCollected);
     player.played = true;
+    recordTurn(room, player, word, points, boosts);
 
     io.to(room.code).emit('wordPlayed', { playerId: AI_PLAYER_ID, name: player.name, word, points, gemsCollected });
 
