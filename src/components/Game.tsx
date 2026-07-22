@@ -36,6 +36,7 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
   const [standings, setStandings] = useState<RoundResult[] | null>(null);
   const [toast, setToast] = useState('');
   const [turnElapsedSeconds, setTurnElapsedSeconds] = useState(0);
+  const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
 
   useEffect(() => {
     const onRoundStart = (data: { round: number; tiles: BoardTile[] }) => {
@@ -292,25 +293,78 @@ export function Game({ room, myId }: { room: RoomState; myId: string }) {
               const isActive = p.id === room.activePlayerId;
               const isWaiter = !isActive && !p.isAI && room.phase === 'playing';
               const voted = room.rushVotes.includes(p.id);
+              const isExpanded = expandedPlayerId === p.id;
+              const latest = p.wordHistory[0] ?? { word: '—', score: 0 };
+              const historyId = `word-history-${p.id}`;
               return (
-                <div
-                  className={`score-row ${p.id === myId ? 'is-me' : ''} ${isActive ? 'is-active' : ''}`}
-                  key={p.id}
-                >
-                  <span className={`status-dot ${p.played ? 'done' : ''} ${isActive ? 'turn' : ''}`} />
-                  <span className="score-name">
-                    {p.name}
-                    {p.isAI && <span className="ai-tag">AI</span>}
-                    {p.id === myId && <span className="you-tag-sm">you</span>}
-                  </span>
-                  {/* rush vote indicator next to each non-active player */}
-                  {isWaiter && hasAnyVotes && (
-                    <span className={`rush-vote-dot ${voted ? 'voted' : 'pending'}`} title={voted ? 'Voted' : 'Pending'}>
-                      {voted ? '✓' : '◌'}
+                <div className={`score-player ${isExpanded ? 'is-expanded' : ''}`} key={p.id}>
+                  <button
+                    type="button"
+                    className={`score-row ${p.id === myId ? 'is-me' : ''} ${isActive ? 'is-active' : ''}`}
+                    aria-expanded={isExpanded}
+                    aria-controls={historyId}
+                    onClick={() => setExpandedPlayerId((openId) => openId === p.id ? null : p.id)}
+                  >
+                    <span className={`status-dot ${p.played ? 'done' : ''} ${isActive ? 'turn' : ''}`} />
+                    <span className="score-player-main">
+                      <span className="score-name">
+                        {p.name}
+                        {p.isAI && <span className="ai-tag">AI</span>}
+                        {p.id === myId && <span className="you-tag-sm">you</span>}
+                      </span>
+                      <span className="score-latest">
+                        <span>{latest.word}</span>
+                        <b>{latest.score}</b>
+                      </span>
                     </span>
+                    {/* rush vote indicator next to each non-active player */}
+                    {isWaiter && hasAnyVotes && (
+                      <span className={`rush-vote-dot ${voted ? 'voted' : 'pending'}`} title={voted ? 'Voted' : 'Pending'}>
+                        {voted ? '✓' : '◌'}
+                      </span>
+                    )}
+                    <span className="score-gems">♦ {p.gems}</span>
+                    <span className="score-value" title="Total score">{p.score}</span>
+                    <span className="score-chevron" aria-hidden="true">
+                      <svg viewBox="0 0 10 6" focusable="false">
+                        <path d="M1 1h8L5 5z" />
+                      </svg>
+                    </span>
+                  </button>
+                  {isExpanded && (
+                    <div className="word-history" id={historyId}>
+                      {p.wordHistory.length ? p.wordHistory.map((entry) => (
+                        <div className="word-history-round" key={`${entry.round}-${entry.word}-${entry.score}`}>
+                          <div className="word-history-separator">— Round {entry.round} —</div>
+                          <div className="word-history-entry">
+                            <span className="history-word-tiles" aria-label={entry.word === '—' ? 'No word' : entry.word}>
+                              {entry.word === '—' ? (
+                                <span className="history-skip-word">—</span>
+                              ) : entry.word.split('').map((letter, letterIndex) => (
+                                <span className="history-letter-tile" key={`${letter}-${letterIndex}`}>
+                                  {letter}
+                                  {entry.boosts
+                                    .filter((boost) => boost.letterIndex === letterIndex)
+                                    .map((boost) => (
+                                      <span
+                                        className={`history-boost history-boost-${boost.type.toLowerCase()}`}
+                                        title={boost.type}
+                                        key={boost.type}
+                                      >
+                                        {boost.type}
+                                      </span>
+                                    ))}
+                                </span>
+                              ))}
+                            </span>
+                            <span className="history-score">{entry.score}</span>
+                          </div>
+                        </div>
+                      )) : (
+                        <div className="word-history-empty">No turns recorded yet.</div>
+                      )}
+                    </div>
                   )}
-                  <span className="score-gems">♦ {p.gems}</span>
-                  <span className="score-value">{p.score}</span>
                 </div>
               );
             })}
